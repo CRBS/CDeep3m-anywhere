@@ -1,0 +1,9 @@
+run	dataset	backend	device	augspeed	wall_s	status
+s_caffe_cpu	testset	caffe	cpu	10	114.5	ERROR
+s_ncnn_cpu	testset	ncnn	cpu	10	36.6	ERROR
+s_ncnn_vulkan	testset	ncnn	vulkan	10	302.1	ERROR
+v_caffe_cpu	validation	caffe	cpu	10	103.5	ERROR
+v_ncnn_cpu	validation	ncnn	cpu	10	33.5	ERROR
+f_ncnn_cpu	testset	ncnn	cpu	1	273.3	ERROR
+fv_ncnn_cpu	validation	ncnn	cpu	1	248.2	ERROR
+f_caffe_cpu	testset	caffe	cpu	1	862.9	ERROR

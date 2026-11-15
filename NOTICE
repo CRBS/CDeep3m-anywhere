@@ -1,0 +1,18 @@
+CDeep3M-anywhere
+
+The patches in patches/ are modifications of CDeep3M2 (https://github.com/CRBS/cdeep3m2,
+commit 67d6308) and of the CDeep3M Caffe fork
+(https://github.com/coleslaw481/caffe_nd_sense_segmentation, commit 6566b5d).
+CDeep3M2 is Copyright 2020 The Regents of the University of California and is
+distributed under the license in LICENSE (educational, research and non-profit use;
+the copyright notice and license text must be kept in all copies).
+
+The Caffe fork's license is listed as "Other" on GitHub; check it before
+redistributing any of its code. No fork code is included here, only a patch.
+
+This repository does not include model weights. Pretrained models come from the
+CDeep3M model zoo (https://cdeep3m.crbs.ucsd.edu/home/pre_trained_models); each model
+has its own terms.
+
+ncnn (https://github.com/Tencent/ncnn, BSD-3-Clause) is used as a dependency and is
+not included.

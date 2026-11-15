@@ -1,0 +1,111 @@
+diff --git a/Makefile b/Makefile
+index 985fffd..0a1a1ee 100644
+--- a/Makefile
++++ b/Makefile
+@@ -170,7 +170,7 @@ ifneq ($(CPU_ONLY), 1)
+ 	LIBRARIES := cudart cublas curand
+ endif
+ 
+-LIBRARIES += glog gflags protobuf boost_system boost_filesystem m hdf5_hl hdf5
++LIBRARIES += glog gflags protobuf boost_system boost_filesystem m hdf5_serial_hl hdf5_serial
+ 
+ # handle IO dependencies
+ USE_LEVELDB ?= 1
+diff --git a/include/caffe/util/interp.hpp b/include/caffe/util/interp.hpp
+index 1fd0b4e..fd2b061 100644
+--- a/include/caffe/util/interp.hpp
++++ b/include/caffe/util/interp.hpp
+@@ -3,7 +3,9 @@
+ #ifndef CAFFE_UTIL_INTERP_H_
+ #define CAFFE_UTIL_INTERP_H_
+ 
++#ifndef CPU_ONLY
+ #include <cublas_v2.h>
++#endif
+ #include "caffe/proto/caffe.pb.h"
+ 
+ namespace caffe {
+diff --git a/src/caffe/layers/meanfield_iteration.cpp b/src/caffe/layers/meanfield_iteration.cpp
+index 558cd61..a9b19e6 100644
+--- a/src/caffe/layers/meanfield_iteration.cpp
++++ b/src/caffe/layers/meanfield_iteration.cpp
+@@ -280,5 +280,12 @@ void MeanfieldIteration<Dtype>::Backward_cpu() {
+   softmax_layer_->Backward(softmax_top_vec_, propagate_down, softmax_bottom_vec_);
+ }
+ 
++#ifdef CPU_ONLY
++template <typename Dtype>
++void MeanfieldIteration<Dtype>::Forward_gpu() { NO_GPU; }
++template <typename Dtype>
++void MeanfieldIteration<Dtype>::Backward_gpu() { NO_GPU; }
++#endif
++
+ INSTANTIATE_CLASS(MeanfieldIteration);
+ }  // namespace caffe
+diff --git a/src/caffe/layers/multi_stage_meanfield.cpp b/src/caffe/layers/multi_stage_meanfield.cpp
+index 1f9ab39..6f8cc11 100644
+--- a/src/caffe/layers/multi_stage_meanfield.cpp
++++ b/src/caffe/layers/multi_stage_meanfield.cpp
+@@ -289,6 +289,14 @@ namespace caffe {
+       output_kernel[2*p + 1] = static_cast<float>(p / width_) / theta_gamma_;
+     }
+   }
++#ifdef CPU_ONLY
++  template <typename Dtype>
++  void MultiStageMeanfieldLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
++      const vector<Blob<Dtype>*>& top) { NO_GPU; }
++  template <typename Dtype>
++  void MultiStageMeanfieldLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
++      const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) { NO_GPU; }
++#endif
+   INSTANTIATE_CLASS(MultiStageMeanfieldLayer);
+   REGISTER_LAYER_CLASS(MultiStageMeanfield);
+ 
+diff --git a/src/caffe/layers/window_data_layer.cpp b/src/caffe/layers/window_data_layer.cpp
+index 4ca8315..a7cc5b2 100644
+--- a/src/caffe/layers/window_data_layer.cpp
++++ b/src/caffe/layers/window_data_layer.cpp
+@@ -287,7 +287,7 @@ void WindowDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
+           image_database_cache_[window[WindowDataLayer<Dtype>::IMAGE_INDEX]];
+         cv_img = DecodeDatumToCVMat(image_cached.second, true);
+       } else {
+-        cv_img = cv::imread(image.first, CV_LOAD_IMAGE_COLOR);
++        cv_img = cv::imread(image.first, cv::IMREAD_COLOR);
+         if (!cv_img.data) {
+           LOG(ERROR) << "Could not open or find file " << image.first;
+           return;
+diff --git a/src/caffe/util/io.cpp b/src/caffe/util/io.cpp
+index 835d2d4..7b208e7 100644
+--- a/src/caffe/util/io.cpp
++++ b/src/caffe/util/io.cpp
+@@ -54,7 +54,7 @@ bool ReadProtoFromBinaryFile(const char* filename, Message* proto) {
+   CHECK_NE(fd, -1) << "File not found: " << filename;
+   ZeroCopyInputStream* raw_input = new FileInputStream(fd);
+   CodedInputStream* coded_input = new CodedInputStream(raw_input);
+-  coded_input->SetTotalBytesLimit(kProtoReadBytesLimit, 536870912);
++  coded_input->SetTotalBytesLimit(kProtoReadBytesLimit);
+ 
+   bool success = proto->ParseFromCodedStream(coded_input);
+ 
+@@ -73,8 +73,8 @@ void WriteProtoToBinaryFile(const Message& proto, const char* filename) {
+ cv::Mat ReadImageToCVMat(const string& filename,
+     const int height, const int width, const bool is_color) {
+   cv::Mat cv_img;
+-  int cv_read_flag = (is_color ? CV_LOAD_IMAGE_COLOR :
+-    CV_LOAD_IMAGE_GRAYSCALE);
++  int cv_read_flag = (is_color ? cv::IMREAD_COLOR :
++    cv::IMREAD_GRAYSCALE);
+   cv::Mat cv_img_origin = cv::imread(filename, cv_read_flag);
+   if (!cv_img_origin.data) {
+     LOG(ERROR) << "Could not open or find file " << filename;
+@@ -179,8 +179,8 @@ cv::Mat DecodeDatumToCVMat(const Datum& datum, bool is_color) {
+   CHECK(datum.encoded()) << "Datum not encoded";
+   const string& data = datum.data();
+   std::vector<char> vec_data(data.c_str(), data.c_str() + data.size());
+-  int cv_read_flag = (is_color ? CV_LOAD_IMAGE_COLOR :
+-    CV_LOAD_IMAGE_GRAYSCALE);
++  int cv_read_flag = (is_color ? cv::IMREAD_COLOR :
++    cv::IMREAD_GRAYSCALE);
+   cv_img = cv::imdecode(vec_data, cv_read_flag);
+   if (!cv_img.data) {
+     LOG(ERROR) << "Could not decode datum ";

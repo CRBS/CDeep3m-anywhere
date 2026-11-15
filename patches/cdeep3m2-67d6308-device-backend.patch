@@ -1,0 +1,268 @@
+diff -ruN a/caffepredict.sh b/caffepredict.sh
+--- a/caffepredict.sh	2026-11-15 08:05:18.024757194 -0800
++++ b/caffepredict.sh	2026-11-15 08:05:18.025386524 -0800
+@@ -12,6 +12,8 @@
+ fi
+ 
+ gpu="all"
++device="auto"
++backend="caffe"
+ 
+ function usage()
+ {
+@@ -39,12 +41,18 @@
+   -h, --help           show this help message and exit
+   --gpu                Which GPU to use, can be a number ie 0 or 1 or
+                        all to use all GPUs (default $gpu)
++  --backend            caffe (default) or ncnn. ncnn needs the converted
++                       model in <model dir>/ncnn/ and supports --device
++                       cpu or vulkan (any Vulkan GPU).
++  --device             auto, cpu, gpu (caffe/CUDA) or vulkan (ncnn). auto uses an NVIDIA GPU if
++                       nvidia-smi reports one, otherwise the CPU.
++                       (default $device)
+ 
+     " 1>&2;
+    exit 1;
+ }
+ 
+-TEMP=$(getopt -o h --long "help,gpu:" -n "$0" -- "$@")
++TEMP=$(getopt -o h --long "help,gpu:,device:,backend:" -n "$0" -- "$@")
+ eval set -- "$TEMP"
+ 
+ while true ; do
+@@ -52,6 +60,8 @@
+         -h ) usage ;;
+         --help ) usage ;;
+         --gpu ) gpu=$2 ; shift 2 ;;
++        --device ) device=$2 ; shift 2 ;;
++        --backend ) backend=$2 ; shift 2 ;;
+         --) shift ; break ;;
+     esac
+ done
+@@ -91,9 +101,40 @@
+   fatal_error "$out_dir" "ERROR unable to create $log_dir" 3
+ fi
+ 
+-gpucount=$(nvidia-smi -L | wc -l)
+-if [ "$gpucount" -eq 0 ] ; then
+-  fatal_error "$out_dir" "ERROR unable to get count of GPU(s). Is nvidia-smi working?" 4
++if [ "$backend" == "ncnn" ] && [ "$device" == "auto" ] ; then
++  device="cpu"
++fi
++
++if [ "$device" == "auto" ] ; then
++  if command -v nvidia-smi > /dev/null 2>&1 && [ "$(nvidia-smi -L 2>/dev/null | wc -l)" -gt 0 ] ; then
++    device="gpu"
++  else
++    device="cpu"
++  fi
++fi
++
++if [ "$backend" == "ncnn" ] ; then
++  if [ "$device" != "cpu" ] && [ "$device" != "vulkan" ] ; then
++    fatal_error "$out_dir" "ERROR ncnn backend needs --device cpu or vulkan" 4
++  fi
++  echo "Running prediction with ncnn on $device"
++  gpu="0"
++  gpucount=1
++elif [ "$device" == "vulkan" ] ; then
++  fatal_error "$out_dir" "ERROR --device vulkan requires --backend ncnn" 4
++elif [ "$device" == "cpu" ] ; then
++  # caffe tools run in CPU mode when --gpu is negative. One job at a time,
++  # BLAS uses all cores.
++  echo "Running prediction on CPU"
++  gpu="-1"
++  gpucount=1
++elif [ "$device" == "gpu" ] ; then
++  gpucount=$(nvidia-smi -L | wc -l)
++  if [ "$gpucount" -eq 0 ] ; then
++    fatal_error "$out_dir" "ERROR unable to get count of GPU(s). Is nvidia-smi working?" 4
++  fi
++else
++  fatal_error "$out_dir" "ERROR --device must be auto, cpu or gpu" 4
+ fi
+ 
+ (( maxgpuindex=$gpucount-1 ))
+@@ -105,7 +146,7 @@
+   else
+     echo " Using only GPU $gpu"
+   fi
+-else
++elif [ "$device" == "gpu" ] ; then
+   echo "Single GPU detected."
+ fi
+ 
+@@ -176,7 +217,11 @@
+     ;;
+     # The gpu number makes the final command string
+     5)
+-    echo "GLOG_logtostderr=\"${job_array[0]}\" /usr/bin/time -p $CAFFE_PATH/.build_release/tools/predict_seg_new.bin --model=${job_array[1]}/deploy.prototxt --weights=${job_array[2]} --data=${job_array[3]} --predict=${job_array[4]}/test.h5 --shift_axis=2 --shift_stride=1 --gpu=$line >> \"$out_log\" 2>&1" >> "$cmdlets"
++    if [ "$backend" == "ncnn" ] ; then
++      echo "/usr/bin/time -p python3 ${script_dir}/ncnn_predict.py --model-dir ${job_array[1]}/ncnn --data ${job_array[3]} --predict ${job_array[4]}/test.h5 --device $device >> \"$out_log\" 2>&1" >> "$cmdlets"
++    else
++      echo "GLOG_logtostderr=\"${job_array[0]}\" /usr/bin/time -p $CAFFE_PATH/.build_release/tools/predict_seg_new.bin --model=${job_array[1]}/deploy.prototxt --weights=${job_array[2]} --data=${job_array[3]} --predict=${job_array[4]}/test.h5 --shift_axis=2 --shift_stride=1 --gpu=$line >> \"$out_log\" 2>&1" >> "$cmdlets"
++    fi
+     ;;
+     *)
+     echo "I should never be here in default"
+diff -ruN a/configs/check_limits.py b/configs/check_limits.py
+--- a/configs/check_limits.py	2026-11-15 08:05:18.027669083 -0800
++++ b/configs/check_limits.py	2026-11-15 08:05:18.028330622 -0800
+@@ -14,10 +14,13 @@
+ 
+ #json.load('./configs/cpu_resources.txt')
+ def cpus():
+-    if os.path.isfile('./configs/cpu_resources.txt'):
+-        with open('./configs/cpu_resources.txt') as json_file:
+-            cpu_limits = json.load(json_file)
+-    if os.path.isfile('/home/cdeep3m/configs/cpu_resources.txt'):
+-        with open('/home/cdeep3m/configs/cpu_resources.txt') as json_file:
+-            cpu_limits = json.load(json_file)
++    # find the config relative to this file, not the current directory
++    here = os.path.dirname(os.path.abspath(__file__))
++    cpu_limits = {}
++    for path in (os.path.join(here, 'cpu_resources.txt'),
++                 './configs/cpu_resources.txt',
++                 '/home/cdeep3m/configs/cpu_resources.txt'):
++        if os.path.isfile(path):
++            with open(path) as json_file:
++                cpu_limits = json.load(json_file)
+     return cpu_limits
+diff -ruN a/Create_overlays.py b/Create_overlays.py
+--- a/Create_overlays.py	2026-11-15 08:05:18.031020754 -0800
++++ b/Create_overlays.py	2026-11-15 08:05:18.031859689 -0800
+@@ -42,15 +42,17 @@
+     file_in = os.path.join(inputfolder_raw, file_list_raw[x])
+     # sys.stdout.write('Loading: ' + str(file_in) + ' -> ')
+     raw_image = cv2.imread(file_in, -1)
++    if raw_image.ndim == 3:  # palette/RGB PNGs load as 3 channels
++        raw_image = cv2.cvtColor(raw_image[:, :, :3], cv2.COLOR_BGR2GRAY)
+     file_in = os.path.join(inputfolder_seg, file_list_seg[x])
+     # sys.stdout.write('Loading: ' + str(file_in) + ' -> ')
+     seg = cv2.imread(file_in, -1)
+     seg = np.uint8(seg)
+     #seg = np.clip(seg, 40, 255)
+-    seg = skimage.exposure.rescale_intensity(seg, in_range=(40, 215), out_range=(0, 255))
++    seg = np.clip(skimage.exposure.rescale_intensity(seg, in_range=(40, 215), out_range=(0, 255)), 0, 255).astype(np.uint8)
+     #rgb_seg = np.dstack((np.zeros_like(seg), seg, np.zeros_like(seg))) #convert to RGB for overlay
+     raw_image = np.uint8(raw_image)
+-    raw_image = skimage.exposure.rescale_intensity(raw_image, in_range=(0, 235), out_range=(0, 255))
++    raw_image = np.clip(skimage.exposure.rescale_intensity(raw_image, in_range=(0, 235), out_range=(0, 255)), 0, 255).astype(np.uint8)
+     #rgb_img = np.dstack((raw_image, raw_image, raw_image)) #convert to RGB image for overlay
+     #overlayed = rgb_img # initialize
+     #overlayed = np.uint8(np.uint8(0.60* rgb_img) + np.uint8(0.40* rgb_seg))
+@@ -58,7 +60,7 @@
+     overlayed = cv2.addWeighted(seg, 0.4, cv2.cvtColor(raw_image, cv2.COLOR_GRAY2BGR), 0.6, 0)
+     del seg
+     del raw_image
+-    overlayed = skimage.exposure.rescale_intensity(overlayed, in_range=(0, 225), out_range=(0, 255))
++    overlayed = np.clip(skimage.exposure.rescale_intensity(overlayed, in_range=(0, 225), out_range=(0, 255)), 0, 255).astype(np.uint8)
+     #file_out = os.path.join(outputfolder, file_list_seg[x])
+     file_out = os.path.join(outputfolder, 'overlay_%04d.png' % (x+1) )
+     sys.stdout.write('Saving: ' + str(file_out) + '\n')
+diff -ruN a/predictworker.sh b/predictworker.sh
+--- a/predictworker.sh	2026-11-15 08:05:18.034797933 -0800
++++ b/predictworker.sh	2026-11-15 08:05:18.035832059 -0800
+@@ -13,6 +13,8 @@
+ fi
+ 
+ gpu="all"
++device="auto"
++backend="caffe"
+ 
+ function usage()
+ {
+@@ -35,6 +37,8 @@
+   -h, --help           show this help message and exit
+   --gpu                Which GPU to use, can be a number ie 0 or 1 or
+                        all to use all GPUs (default $gpu)
++  --device             auto, cpu, gpu or vulkan (default $device)
++  --backend            caffe or ncnn (default $backend)
+   --waitinterval       Number of seconds to wait between checking
+                        for number of completed packages 
+                        (default $waitinterval)
+@@ -43,7 +47,7 @@
+     exit 1;
+ }
+ 
+-TEMP=$(getopt -o h --long "help,waitinterval:,gpu:" -n "$0" -- "$@")
++TEMP=$(getopt -o h --long "help,waitinterval:,gpu:,device:,backend:" -n "$0" -- "$@")
+ eval set -- "$TEMP"
+ 
+ while true ; do
+@@ -51,6 +55,8 @@
+         -h ) usage ;;
+         --help ) usage ;;
+         --gpu ) gpu=$2 ; shift 2 ;;
++        --device ) device=$2 ; shift 2 ;;
++        --backend ) backend=$2 ; shift 2 ;;
+         --waitinterval ) waitinterval=$2 ; shift 2 ;;
+         --) shift ; break ;;
+     esac
+@@ -80,6 +86,7 @@
+ echo "Models: $model_list"
+ echo "Speed: $aug_speed"
+ echo "GPU: $gpu"
++echo "Device: $device"
+ echo ""
+ 
+ package_proc_info="$out_dir/augimages/package_processing_info.txt"
+@@ -121,7 +128,7 @@
+                 exit 1
+             fi
+             echo "Running prediction on $model_name $package_name"
+-            /usr/bin/time -p "${script_dir}"/caffepredict.sh --gpu "$gpu" "$trained_model_dir/$model_name/trainedmodel" "$Z" "$out_pkg"
++            /usr/bin/time -p "${script_dir}"/caffepredict.sh --backend "$backend" --device "$device" --gpu "$gpu" "$trained_model_dir/$model_name/trainedmodel" "$Z" "$out_pkg"
+             ecode=$?
+             if [ $ecode != 0 ] ; then
+                 fatal_error "$out_dir" "ERROR, a non-zero exit code ($ecode) was received from: caffepredict.sh" 4
+diff -ruN a/runprediction.sh b/runprediction.sh
+--- a/runprediction.sh	2026-11-15 08:05:18.040679889 -0800
++++ b/runprediction.sh	2026-11-15 08:05:18.042382699 -0800
+@@ -26,6 +26,8 @@
+ model_list="1fm,3fm,5fm"
+ aug_speed="1"
+ gpu="all"
++device="auto"
++backend="caffe"
+ 
+ function usage()
+ {
+@@ -53,6 +55,10 @@
+                        as well as for the training phase (in PreprocessTrainingData.py).
+   --gpu                Which GPU to use, can be a number ie 0 or 1 or
+                        all to use all GPUs (default $gpu)
++  --backend            caffe (default) or ncnn (cpu or any Vulkan GPU)
++  --device             auto, cpu, gpu or vulkan. auto uses an NVIDIA GPU if
++                       nvidia-smi reports one, otherwise the CPU.
++                       (default $device)
+   --models             Only run prediction on models specified
+                        in comma delimited list. (default $model_list)
+   --augspeed           Augmentation speed. Higher the number
+@@ -70,7 +76,7 @@
+     exit 1;
+ }
+ 
+-TEMP=$(getopt -o h --long "help,denoise:,models:,augspeed:,maxpackages:,gpu:" -n "$0" -- "$@")
++TEMP=$(getopt -o h --long "help,denoise:,models:,augspeed:,maxpackages:,gpu:,device:,backend:" -n "$0" -- "$@")
+ eval set -- "$TEMP"
+ 
+ while true ; do
+@@ -79,6 +85,8 @@
+         --help ) usage ;;
+         --denoise ) denoise=$2 ; shift 2 ;;    
+         --gpu ) gpu=$2 ; shift 2 ;;
++        --device ) device=$2 ; shift 2 ;;
++        --backend ) backend=$2 ; shift 2 ;;
+         --models ) model_list=$2 ; shift 2 ;;
+         --augspeed ) aug_speed=$2 ; shift 2 ;;
+         --maxpackages ) maxpackages=$2 ; shift 2 ;;
+@@ -190,7 +198,7 @@
+ "${script_dir}"/preprocessworker.sh --maxpackages "$maxpackages" "$out_dir" >> "$log_dir/preprocess.log" 2>&1 &
+ 
+ echo "Start up worker to run prediction on packages"
+-"${script_dir}"/predictworker.sh --gpu "$gpu" "$out_dir" >> "$log_dir/prediction.log" 2>&1 &
++"${script_dir}"/predictworker.sh --backend "$backend" --device "$device" --gpu "$gpu" "$out_dir" >> "$log_dir/prediction.log" 2>&1 &
+ 
+ echo "Start up worker to run post processing on packages"
+ "${script_dir}"/postprocessworker.sh "$out_dir" >> "$log_dir/postprocess.log" 2>&1 &
