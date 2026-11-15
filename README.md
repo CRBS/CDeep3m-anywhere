@@ -44,6 +44,8 @@ CPUs and on any GPU with a Vulkan driver, and leaves the rest of the pipeline
 
 Report: [bench/INT8_REPORT.md](bench/INT8_REPORT.md).
 
+The timings in this README were measured before the padding skip below was added; they have not been re-measured.
+
 Full report: [bench/BENCHMARK.md](bench/BENCHMARK.md). Estimates for hardware we did not measure
 (other GPUs, phone, training) are in [docs/NOTES.md](docs/NOTES.md) and are labelled as estimates.
 
@@ -100,8 +102,8 @@ and a fork-specific `phase: PREDICT` field. `ncnn/sanitize_prototxt.py` strips t
 
 ## Known limitations
 * 1fm only. 3fm/5fm take several input slices and are untested.
-* The pipeline still predicts the 4 z-padding slices and discards them, which wastes 27% of the
-  work on an 11-slice stack, and pads small images to 1024x1024.
+* For the 1fm model the ncnn backend skips the 4 z-padding slices (2 at each end) that the merge step
+  discards; the output is unchanged. `NCNN_SKIP_EDGE=0` turns this off. Small images are still zero-padded to 1024x1024.
 * Note: for the 1fm model `--augspeed 1` produces 8 variants, not 16.
 * int8 is CPU only and was calibrated on 20 images; check accuracy on your own data before relying on it.
 * Only tested on Linux x86-64.

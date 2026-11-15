@@ -1,6 +1,6 @@
 diff -ruN a/caffepredict.sh b/caffepredict.sh
---- a/caffepredict.sh	2026-11-15 08:54:11.117170890 -0800
-+++ b/caffepredict.sh	2026-11-15 08:54:11.117748720 -0800
+--- a/caffepredict.sh	2026-11-15 09:07:08.854369053 -0800
++++ b/caffepredict.sh	2026-11-15 09:07:08.855041977 -0800
 @@ -12,6 +12,8 @@
  fi
  
@@ -92,13 +92,27 @@ diff -ruN a/caffepredict.sh b/caffepredict.sh
    echo "Single GPU detected."
  fi
  
-@@ -176,7 +217,11 @@
+@@ -116,6 +157,13 @@
+   (( gpucount=1 ))
+ fi
+ 
++# The 1-frame model only needs the centre slice, so the 2+2 z-padding slices that the merge
++# step discards need not be predicted (NCNN_SKIP_EDGE=0 turns this off). 3fm/5fm need them.
++skip_edge=${NCNN_SKIP_EDGE:-}
++if [ -z "$skip_edge" ] ; then
++  if [ "$(basename "$(cd "$deploy_dir" && pwd)")" == "1fm" ] ; then skip_edge=2 ; else skip_edge=0 ; fi
++fi
++
+ theargs=""
+ parallel_job_file="$out_dir/parallel.jobs"
+ for input_file in $(find "${in_dir}" -name "*.h5" -type f | sort -V) ;
+@@ -176,7 +224,11 @@
      ;;
      # The gpu number makes the final command string
      5)
 -    echo "GLOG_logtostderr=\"${job_array[0]}\" /usr/bin/time -p $CAFFE_PATH/.build_release/tools/predict_seg_new.bin --model=${job_array[1]}/deploy.prototxt --weights=${job_array[2]} --data=${job_array[3]} --predict=${job_array[4]}/test.h5 --shift_axis=2 --shift_stride=1 --gpu=$line >> \"$out_log\" 2>&1" >> "$cmdlets"
 +    if [ "$backend" == "ncnn" ] ; then
-+      echo "/usr/bin/time -p python3 ${script_dir}/ncnn_predict.py --model-dir ${job_array[1]}/ncnn --data ${job_array[3]} --predict ${job_array[4]}/test.h5 --device $device --precision ${NCNN_PRECISION:-fp32} >> \"$out_log\" 2>&1" >> "$cmdlets"
++      echo "/usr/bin/time -p python3 ${script_dir}/ncnn_predict.py --model-dir ${job_array[1]}/ncnn --data ${job_array[3]} --predict ${job_array[4]}/test.h5 --device $device --precision ${NCNN_PRECISION:-fp32} --skip-edge $skip_edge >> \"$out_log\" 2>&1" >> "$cmdlets"
 +    else
 +      echo "GLOG_logtostderr=\"${job_array[0]}\" /usr/bin/time -p $CAFFE_PATH/.build_release/tools/predict_seg_new.bin --model=${job_array[1]}/deploy.prototxt --weights=${job_array[2]} --data=${job_array[3]} --predict=${job_array[4]}/test.h5 --shift_axis=2 --shift_stride=1 --gpu=$line >> \"$out_log\" 2>&1" >> "$cmdlets"
 +    fi
@@ -106,8 +120,8 @@ diff -ruN a/caffepredict.sh b/caffepredict.sh
      *)
      echo "I should never be here in default"
 diff -ruN a/configs/check_limits.py b/configs/check_limits.py
---- a/configs/check_limits.py	2026-11-15 08:54:11.121617171 -0800
-+++ b/configs/check_limits.py	2026-11-15 08:54:11.122537204 -0800
+--- a/configs/check_limits.py	2026-11-15 09:07:08.859278506 -0800
++++ b/configs/check_limits.py	2026-11-15 09:07:08.860302904 -0800
 @@ -14,10 +14,13 @@
  
  #json.load('./configs/cpu_resources.txt')
@@ -129,8 +143,8 @@ diff -ruN a/configs/check_limits.py b/configs/check_limits.py
 +                cpu_limits = json.load(json_file)
      return cpu_limits
 diff -ruN a/Create_overlays.py b/Create_overlays.py
---- a/Create_overlays.py	2026-11-15 08:54:11.126969051 -0800
-+++ b/Create_overlays.py	2026-11-15 08:54:11.127632989 -0800
+--- a/Create_overlays.py	2026-11-15 09:07:08.865286869 -0800
++++ b/Create_overlays.py	2026-11-15 09:07:08.866120278 -0800
 @@ -42,15 +42,17 @@
      file_in = os.path.join(inputfolder_raw, file_list_raw[x])
      # sys.stdout.write('Loading: ' + str(file_in) + ' -> ')
@@ -161,8 +175,8 @@ diff -ruN a/Create_overlays.py b/Create_overlays.py
      file_out = os.path.join(outputfolder, 'overlay_%04d.png' % (x+1) )
      sys.stdout.write('Saving: ' + str(file_out) + '\n')
 diff -ruN a/predictworker.sh b/predictworker.sh
---- a/predictworker.sh	2026-11-15 08:54:11.131313979 -0800
-+++ b/predictworker.sh	2026-11-15 08:54:11.131899576 -0800
+--- a/predictworker.sh	2026-11-15 09:07:08.869582849 -0800
++++ b/predictworker.sh	2026-11-15 09:07:08.871149885 -0800
 @@ -13,6 +13,8 @@
  fi
  
@@ -217,8 +231,8 @@ diff -ruN a/predictworker.sh b/predictworker.sh
              if [ $ecode != 0 ] ; then
                  fatal_error "$out_dir" "ERROR, a non-zero exit code ($ecode) was received from: caffepredict.sh" 4
 diff -ruN a/runprediction.sh b/runprediction.sh
---- a/runprediction.sh	2026-11-15 08:54:11.135431345 -0800
-+++ b/runprediction.sh	2026-11-15 08:54:11.136027103 -0800
+--- a/runprediction.sh	2026-11-15 09:07:08.874275396 -0800
++++ b/runprediction.sh	2026-11-15 09:07:08.874871401 -0800
 @@ -26,6 +26,8 @@
  model_list="1fm,3fm,5fm"
  aug_speed="1"

@@ -21,6 +21,9 @@ def main():
                     help="int8 uses <model-dir>/int8 (see convert_model.sh); CPU only")
     ap.add_argument("--gpu-index", type=int, default=0)
     ap.add_argument("--threads", type=int, default=0, help="CPU threads (0 = all)")
+    ap.add_argument("--skip-edge", type=int, default=0,
+                    help="do not predict the first and last N slices (z padding the merge step discards, "
+                         "2 for the 1-frame model). Tiny placeholder files keep the slice numbering unchanged.")
     a = ap.parse_args()
 
     model_dir = a.model_dir
@@ -45,7 +48,15 @@ def main():
     net.load_model(os.path.join(model_dir, "model.bin"))
 
     t_all = time.time()
-    for i in range(data.shape[2]):
+    depth = data.shape[2]
+    if 2 * a.skip_edge >= depth:
+        sys.exit("--skip-edge %d leaves no slices to predict in a stack of %d" % (a.skip_edge, depth))
+    for i in range(depth):
+        if i < a.skip_edge or i >= depth - a.skip_edge:
+            with h5py.File("%s_shift_%d.h5" % (a.predict, i), "w") as f:   # placeholder, never read
+                f.create_dataset("data", data=np.zeros((1, 2, 1, 1), dtype=np.float32))
+            print("slice %d skipped (z padding)" % i, flush=True)
+            continue
         t = time.time()
         x = np.ascontiguousarray(data[:, :, i].astype(np.float32))[None]
         ex = net.create_extractor()
@@ -56,7 +67,7 @@ def main():
         with h5py.File("%s_shift_%d.h5" % (a.predict, i), "w") as f:
             f.create_dataset("data", data=np.array(out)[None].astype(np.float32))
         print("slice %d done in %.2fs" % (i, time.time() - t), flush=True)
-    print("ncnn %s %s total %.2fs for %d slices" % (a.device, a.precision, time.time() - t_all, data.shape[2]))
+    print("ncnn %s %s total %.2fs for %d slices (%d predicted)" % (a.device, a.precision, time.time() - t_all, depth, depth - 2 * a.skip_edge))
 
 
 if __name__ == "__main__":
