@@ -1,0 +1,17 @@
+# never commit weights, data, checkpoints or environments
+*.caffemodel
+*.solverstate
+*.pt
+*.pth
+*.h5
+*.npy
+*.bin
+*.table
+checkpoints/
+runs/
+data/
+venv/
+__pycache__/
+*.pyc
+*.tmp
+progress/autopush.log
