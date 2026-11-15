@@ -1,0 +1,9 @@
+run	precision	dataset	augspeed	wall_s
+val1_fp32	fp32	validation	10	33.0
+val1_int8	int8	validation	10	27.1
+val8_fp32	fp32	validation	1	244.9
+val8_int8	int8	validation	1	180.8
+test8_fp32	fp32	testset	1	260.9
+test8_int8	int8	testset	1	196.8
+test8_fp32b	fp32	testset	1	262.8
+test8_int8b	int8	testset	1	199.9

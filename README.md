@@ -28,6 +28,22 @@ CPUs and on any GPU with a Vulkan driver, and leaves the rest of the pipeline
 * The Intel iGPU is slower than the CPU here. Vulkan only pays off on faster GPUs, which we have not tested.
 * fp16 on the Intel iGPU changed the output slightly, so the runner uses fp32.
 
+### int8 quantization (ncnn CPU)
+| Job (1fm, ncnn CPU) | fp32 | int8 | Speedup |
+|---|---|---|---|
+| 10 validation images, 1 variant | 33 s | 27 s | 1.22x |
+| 10 validation images, 8 variants | 245 s | 181 s | 1.35x |
+| 11 test images, 8 variants (mean of 2 runs) | 262 s | 198 s | 1.32x |
+
+* The int8 model is 31.8 MB instead of 96.2 MB.
+* Accuracy against ground truth is unchanged within noise: Dice 0.8455 (int8) vs 0.8403 (fp32) with 8 variants.
+* int8 and fp32 final segmentations are close but not identical: Dice 0.984 between them on the
+  validation images (3.3% of pixels differ by more than 8 gray levels, at mask boundaries), 0.995 on the test set.
+* Calibration used 20 training images with the KL method. Other methods and image counts were not tried.
+* int8 is CPU only; it has not been tested on Vulkan.
+
+Report: [bench/INT8_REPORT.md](bench/INT8_REPORT.md).
+
 Full report: [bench/BENCHMARK.md](bench/BENCHMARK.md). Estimates for hardware we did not measure
 (other GPUs, phone, training) are in [docs/NOTES.md](docs/NOTES.md) and are labelled as estimates.
 
@@ -52,14 +68,20 @@ Full report: [bench/BENCHMARK.md](bench/BENCHMARK.md). Estimates for hardware we
    ```
 5. **Convert the 1fm model**
    ```
-   CAFFE2NCNN=/path/to/ncnn/build/tools/caffe/caffe2ncnn \
-     ncnn/convert_model.sh <model>/1fm/deploy.prototxt <model>/1fm/trainedmodel/*.caffemodel <model>/1fm/ncnn
+   export NCNN_BUILD=/path/to/ncnn/build
+   ncnn/convert_model.sh <model>/1fm/deploy.prototxt <model>/1fm/trainedmodel/*.caffemodel <model>/1fm/ncnn
+   ```
+   Optional int8: make calibration data from labelled **training** images (not the images you evaluate on),
+   then pass its list as a fourth argument. This also writes `<model>/1fm/ncnn/int8/`.
+   ```
+   python3 ncnn/make_calibration.py --repo <patched cdeep3m2> --images <training images> --out calib
+   ncnn/convert_model.sh <deploy.prototxt> <model.caffemodel> <model>/1fm/ncnn calib/list.txt
    ```
 6. **Predict**
    ```
    ./runprediction.sh --models 1fm --denoise 0 --augspeed 1 --backend ncnn --device cpu <model> <images> <out>
    ```
-   Use `--device vulkan` for a Vulkan GPU. `--denoise 0` is needed unless `prox_tv` is installed
+   Use `--device vulkan` for a Vulkan GPU. Prefix with `NCNN_PRECISION=int8` to use the int8 model (CPU only). `--denoise 0` is needed unless `prox_tv` is installed
    and you use a denoised model. Results are in `<out>/ensembled/Segmented_*.png`.
 
 Optional, to compare with Caffe: build the Caffe fork CPU-only with
@@ -73,13 +95,15 @@ See the header of `bench/run_bench.sh` for the environment variables; then
 ## How the conversion works
 The 1fm deploy network is plain 2D in practice: 3D-style layers with depth 1, a 5D input shape,
 and a fork-specific `phase: PREDICT` field. `ncnn/sanitize_prototxt.py` strips those, then ncnn's
-`caffe2ncnn` converts it. The result was checked against Caffe on real data.
+`caffe2ncnn` converts it. `convert_model.sh` also adds the `Input` layer that `caffe2ncnn` does not write
+(the int8 quantization tool needs it). The result was checked against Caffe on real data.
 
 ## Known limitations
 * 1fm only. 3fm/5fm take several input slices and are untested.
 * The pipeline still predicts the 4 z-padding slices and discards them, which wastes 27% of the
   work on an 11-slice stack, and pads small images to 1024x1024.
 * Note: for the 1fm model `--augspeed 1` produces 8 variants, not 16.
+* int8 is CPU only and was calibrated on 20 images; check accuracy on your own data before relying on it.
 * Only tested on Linux x86-64.
 
 ## License

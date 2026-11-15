@@ -5,6 +5,8 @@
 * Fusing BatchNorm/Scale/ReLU with `ncnnoptimize`: no speedup (29.7 s vs 29.6 s per variant), identical output.
 * Running 2 or 4 ncnn processes in parallel: no gain (30.3 and 30.9 s per variant vs 29.6 s). The CPU is already saturated.
 * Caffe CPU with 8 BLAS threads was about 15% faster than 16 threads (107 s vs 127 s per variant).
+* int8 (ncnn2table KL, 20 training slices): 1.22-1.35x faster end to end, Dice vs ground truth unchanged within noise.
+  Model is 3x smaller. Smaller gain than hoped because only convolutions are quantized.
 * Active layers in the 1fm deploy network are all standard (Convolution, Deconvolution with bilinear weights,
   BatchNorm+Scale, ReLU, Eltwise, Concat, Pooling, Softmax). The `Unpooling` layers in the file are commented out.
 * The training loss is one `SoftmaxWithLoss` with class balancing (`label_select_param`) and `ignore_label: 2`.
@@ -23,7 +25,8 @@ These were derived from the numbers above and the hardware specs. Treat them as 
 1. Skip the z-padding slices for 1fm (lossless, 27% less work on 11 slices).
 2. Use the real image size instead of padding to 1024x1024.
 3. Measure Dice against the number of augmentation variants (only 1 and 8 were measured).
-4. int8 quantization (CPU has AVX-512 VNNI); needs accuracy validation.
+4. Combine int8 with skipping the padding slices (expected about 1.7x over fp32; not built).
+5. Try other int8 calibration methods (percentile, more images).
 
 ## Corrections made during development
 * For the 1fm model `--augspeed 1` yields 8 variants, not 16 (see `augment_package.py`).

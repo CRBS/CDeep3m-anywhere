@@ -1,6 +1,6 @@
 diff -ruN a/caffepredict.sh b/caffepredict.sh
---- a/caffepredict.sh	2026-11-15 08:05:18.024757194 -0800
-+++ b/caffepredict.sh	2026-11-15 08:05:18.025386524 -0800
+--- a/caffepredict.sh	2026-11-15 08:54:11.117170890 -0800
++++ b/caffepredict.sh	2026-11-15 08:54:11.117748720 -0800
 @@ -12,6 +12,8 @@
  fi
  
@@ -98,7 +98,7 @@ diff -ruN a/caffepredict.sh b/caffepredict.sh
      5)
 -    echo "GLOG_logtostderr=\"${job_array[0]}\" /usr/bin/time -p $CAFFE_PATH/.build_release/tools/predict_seg_new.bin --model=${job_array[1]}/deploy.prototxt --weights=${job_array[2]} --data=${job_array[3]} --predict=${job_array[4]}/test.h5 --shift_axis=2 --shift_stride=1 --gpu=$line >> \"$out_log\" 2>&1" >> "$cmdlets"
 +    if [ "$backend" == "ncnn" ] ; then
-+      echo "/usr/bin/time -p python3 ${script_dir}/ncnn_predict.py --model-dir ${job_array[1]}/ncnn --data ${job_array[3]} --predict ${job_array[4]}/test.h5 --device $device >> \"$out_log\" 2>&1" >> "$cmdlets"
++      echo "/usr/bin/time -p python3 ${script_dir}/ncnn_predict.py --model-dir ${job_array[1]}/ncnn --data ${job_array[3]} --predict ${job_array[4]}/test.h5 --device $device --precision ${NCNN_PRECISION:-fp32} >> \"$out_log\" 2>&1" >> "$cmdlets"
 +    else
 +      echo "GLOG_logtostderr=\"${job_array[0]}\" /usr/bin/time -p $CAFFE_PATH/.build_release/tools/predict_seg_new.bin --model=${job_array[1]}/deploy.prototxt --weights=${job_array[2]} --data=${job_array[3]} --predict=${job_array[4]}/test.h5 --shift_axis=2 --shift_stride=1 --gpu=$line >> \"$out_log\" 2>&1" >> "$cmdlets"
 +    fi
@@ -106,8 +106,8 @@ diff -ruN a/caffepredict.sh b/caffepredict.sh
      *)
      echo "I should never be here in default"
 diff -ruN a/configs/check_limits.py b/configs/check_limits.py
---- a/configs/check_limits.py	2026-11-15 08:05:18.027669083 -0800
-+++ b/configs/check_limits.py	2026-11-15 08:05:18.028330622 -0800
+--- a/configs/check_limits.py	2026-11-15 08:54:11.121617171 -0800
++++ b/configs/check_limits.py	2026-11-15 08:54:11.122537204 -0800
 @@ -14,10 +14,13 @@
  
  #json.load('./configs/cpu_resources.txt')
@@ -129,8 +129,8 @@ diff -ruN a/configs/check_limits.py b/configs/check_limits.py
 +                cpu_limits = json.load(json_file)
      return cpu_limits
 diff -ruN a/Create_overlays.py b/Create_overlays.py
---- a/Create_overlays.py	2026-11-15 08:05:18.031020754 -0800
-+++ b/Create_overlays.py	2026-11-15 08:05:18.031859689 -0800
+--- a/Create_overlays.py	2026-11-15 08:54:11.126969051 -0800
++++ b/Create_overlays.py	2026-11-15 08:54:11.127632989 -0800
 @@ -42,15 +42,17 @@
      file_in = os.path.join(inputfolder_raw, file_list_raw[x])
      # sys.stdout.write('Loading: ' + str(file_in) + ' -> ')
@@ -161,8 +161,8 @@ diff -ruN a/Create_overlays.py b/Create_overlays.py
      file_out = os.path.join(outputfolder, 'overlay_%04d.png' % (x+1) )
      sys.stdout.write('Saving: ' + str(file_out) + '\n')
 diff -ruN a/predictworker.sh b/predictworker.sh
---- a/predictworker.sh	2026-11-15 08:05:18.034797933 -0800
-+++ b/predictworker.sh	2026-11-15 08:05:18.035832059 -0800
+--- a/predictworker.sh	2026-11-15 08:54:11.131313979 -0800
++++ b/predictworker.sh	2026-11-15 08:54:11.131899576 -0800
 @@ -13,6 +13,8 @@
  fi
  
@@ -217,8 +217,8 @@ diff -ruN a/predictworker.sh b/predictworker.sh
              if [ $ecode != 0 ] ; then
                  fatal_error "$out_dir" "ERROR, a non-zero exit code ($ecode) was received from: caffepredict.sh" 4
 diff -ruN a/runprediction.sh b/runprediction.sh
---- a/runprediction.sh	2026-11-15 08:05:18.040679889 -0800
-+++ b/runprediction.sh	2026-11-15 08:05:18.042382699 -0800
+--- a/runprediction.sh	2026-11-15 08:54:11.135431345 -0800
++++ b/runprediction.sh	2026-11-15 08:54:11.136027103 -0800
 @@ -26,6 +26,8 @@
  model_list="1fm,3fm,5fm"
  aug_speed="1"
