@@ -1,10 +1,10 @@
 {
  "model": "1fm",
- "update": 500,
+ "update": 800,
  "max_iter": 1000,
- "last_loss": 0.14084377884864807,
- "avg_loss_last_16": 0.17545732483267784,
- "elapsed_hours": 0.472,
- "saved": "2026-11-15 14:40:41",
+ "last_loss": 0.18880586326122284,
+ "avg_loss_last_16": 0.16826084814965725,
+ "elapsed_hours": 0.759,
+ "saved": "2026-11-15 14:57:51",
  "finished": false
 }
