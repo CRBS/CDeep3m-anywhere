@@ -1,5 +1,5 @@
 #!/bin/bash
-# Convert a CDeep3M (Caffe) 1-frame model to ncnn, optionally with int8 quantization.
+# Convert a CDeep3M (Caffe) 1fm/3fm/5fm model to ncnn, optionally with int8 quantization.
 #
 #   convert_model.sh <deploy.prototxt> <model.caffemodel> <out_dir> [calibration_list.txt]
 #
@@ -7,6 +7,7 @@
 # (made by make_calibration.py) it also writes <out_dir>/int8/model.param and model.bin.
 # Put <out_dir> at <trained model dir>/<1fm>/ncnn/ so that `--backend ncnn` finds it.
 #
+# 3fm/5fm also need  export CAFFE_PROTO=<caffe fork>/src/caffe/proto/caffe.proto  and python protobuf.
 # Needs an ncnn build with tools: cmake -DNCNN_BUILD_TOOLS=ON, then
 #   export NCNN_BUILD=/path/to/ncnn/build
 # (caffe2ncnn, ncnn2table and ncnn2int8 are looked up there or on PATH).
@@ -20,8 +21,23 @@ find_tool() {  # name relative-path-in-build
 c2n=$(find_tool caffe2ncnn tools/caffe/caffe2ncnn)
 out=$3
 mkdir -p "$out"
-python3 "$here/sanitize_prototxt.py" "$1" "$out/deploy2d.prototxt"
-"$c2n" "$out/deploy2d.prototxt" "$2" "$out/model.param" "$out/model.bin"
+# Multi-frame models (3fm/5fm, input depth > 1) need their two 3D layers rewritten as 2D first;
+# the 1-frame model only needs the depth-1 dimension dropped.
+frames=$(python3 - "$1" <<'PY'
+import re, sys
+t = " ".join(l for l in open(sys.argv[1]).read().splitlines() if not l.lstrip().startswith("#"))
+print(re.search(r"input_shape\s*\{([^}]*)\}", t).group(1).replace("dim:", " ").split()[-1])
+PY
+)
+if [ "$frames" -gt 1 ]; then
+  [ -n "$CAFFE_PROTO" ] || { echo "multi-frame model: set CAFFE_PROTO to caffe.proto of the CDeep3M Caffe fork" >&2; exit 2; }
+  python3 "$here/convert_multiframe.py" "$1" "$2" "$out" --proto "$CAFFE_PROTO"
+  weights="$out/model2d.caffemodel"
+else
+  python3 "$here/sanitize_prototxt.py" "$1" "$out/deploy2d.prototxt"
+  weights="$2"
+fi
+"$c2n" "$out/deploy2d.prototxt" "$weights" "$out/model.param" "$out/model.bin"
 
 # caffe2ncnn does not write an Input layer for 'input_shape'. The quantization tool needs
 # one, so add it, taking the size from the sanitized prototxt.

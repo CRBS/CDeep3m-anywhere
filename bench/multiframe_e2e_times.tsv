@@ -1,0 +1,6 @@
+run	wall_s
+v3_int8	20.113	ok
+v3_fp32	25.999	ok
+v5_int8	20.074	ok
+v5_fp32	27.425	ok
+one_all	10.861	ok

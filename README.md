@@ -3,8 +3,7 @@
 Run CDeep3M-trained EM segmentation models on any CPU or Vulkan GPU, no CUDA required.
 Built on [ncnn](https://github.com/Tencent/ncnn).
 
-**Status: prediction only, 1fm model only.** Training is not supported (ncnn cannot train).
-3fm and 5fm models have not been converted or tested. Tested on one machine only
+**Status: prediction only (1fm, 3fm and 5fm).** Training is not supported (ncnn cannot train). Tested on one machine only
 (Ubuntu 24.04, gcc 13, i9-11900K, Intel UHD 750).
 
 ## Why
@@ -44,9 +43,15 @@ CPUs and on any GPU with a Vulkan driver, and leaves the rest of the pipeline
 
 Report: [bench/INT8_REPORT.md](bench/INT8_REPORT.md).
 
-### Padding skip (default for 1fm)
+### 3fm and 5fm
+The multi-frame models start with two 3D convolutions over 3 or 5 neighbouring slices. `ncnn/convert_multiframe.py`
+rewrites them as exact 2D convolutions (slices as channels), so the rest converts as for 1fm. ncnn matches Caffe on the
+real slices (max diff 0.00001); on the validation images at augspeed 10 the Dice is 0.80 (3fm) and 0.79 (5fm) against 0.72 for
+1fm, and 0.82 for the three-model ensemble. int8 matches fp32 within noise. Details: [bench/MULTIFRAME.md](bench/MULTIFRAME.md).
+
+### Padding skip (default)
 The pipeline pads every stack with 2 z-slices at each end and the merge step discards their predictions,
-so for the 1fm model the ncnn backend no longer predicts them. This is the default;
+so the ncnn backend no longer predicts them (3fm and 5fm still read the padded slices as input context). This is the default;
 `NCNN_SKIP_EDGE=0` turns it off. Output is identical (max abs diff 0).
 
 | Job (ncnn CPU, 8 variants) | fp32 + padding | int8 + padding | **int8, no padding** | Both vs fp32 + padding |
@@ -80,7 +85,7 @@ Full report: [bench/BENCHMARK.md](bench/BENCHMARK.md). Estimates for hardware we
    cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DNCNN_VULKAN=ON -DNCNN_BUILD_TOOLS=ON \
          -DNCNN_BUILD_EXAMPLES=OFF -DNCNN_PYTHON=OFF -DNCNN_BUILD_TESTS=OFF ..
    ```
-5. **Convert the 1fm model**
+5. **Convert a model** (1fm shown; 3fm and 5fm work the same, but also `pip install protobuf` and `export CAFFE_PROTO=<caffe fork>/src/caffe/proto/caffe.proto`)
    ```
    export NCNN_BUILD=/path/to/ncnn/build
    ncnn/convert_model.sh <model>/1fm/deploy.prototxt <model>/1fm/trainedmodel/*.caffemodel <model>/1fm/ncnn
@@ -95,7 +100,7 @@ Full report: [bench/BENCHMARK.md](bench/BENCHMARK.md). Estimates for hardware we
    ```
    ./runprediction.sh --models 1fm --denoise 0 --augspeed 1 --backend ncnn --device cpu <model> <images> <out>
    ```
-   Use `--device vulkan` for a Vulkan GPU. Prefix with `NCNN_PRECISION=int8` to use the int8 model (CPU only). `--denoise 0` is needed unless `prox_tv` is installed
+   Use `--device vulkan` for a Vulkan GPU. The default precision is int8 when `<model>/<m>/ncnn/int8/` exists and the device is the CPU (otherwise fp32); `NCNN_PRECISION=fp32` forces fp32. `--denoise 0` is needed unless `prox_tv` is installed
    and you use a denoised model. Results are in `<out>/ensembled/Segmented_*.png`.
 
 Optional, to compare with Caffe: build the Caffe fork CPU-only with
@@ -113,8 +118,8 @@ and a fork-specific `phase: PREDICT` field. `ncnn/sanitize_prototxt.py` strips t
 (the int8 quantization tool needs it). The result was checked against Caffe on real data.
 
 ## Known limitations
-* 1fm only. 3fm/5fm take several input slices and are untested.
-* For the 1fm model the ncnn backend skips the 4 z-padding slices (2 at each end) that the merge step
+* 3fm/5fm: tested at `--augspeed 10` (1 variant per model); the full 16-variant run was not timed. Their conversion needs the fork's `caffe.proto` and python protobuf.
+* The ncnn backend skips the 4 z-padding slices (2 at each end) whose predictions the merge step
   discards; the output is unchanged. `NCNN_SKIP_EDGE=0` turns this off. Small images are still zero-padded to 1024x1024.
 * Note: for the 1fm model `--augspeed 1` produces 8 variants, not 16.
 * int8 is CPU only and was calibrated on 20 images; check accuracy on your own data before relying on it.
