@@ -1,0 +1,6 @@
+run	dataset	padding_skipped	wall_s
+test_int8_skip	testset	yes	145.7
+test_int8_skip_b	testset	yes	145.7
+val_int8_skip	validation	yes	139.6
+one_int8_pad	single	no	70.6
+one_int8_skip	single	yes	17.5

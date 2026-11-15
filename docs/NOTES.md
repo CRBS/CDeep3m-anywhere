@@ -22,10 +22,10 @@ These were derived from the numbers above and the hardware specs. Treat them as 
   iterations about 17-23 h. A PyTorch trainer might be 3-6x faster; unproven.
 
 ## Ideas, in order of expected value
-1. Skip the z-padding slices for 1fm: implemented (output verified identical, max diff 0, fp32 and int8). The speedup has not been benchmarked; expected about 27% less work on an 11-slice stack, up to 80% for a single image.
+1. Skip the z-padding slices for 1fm: implemented and now the default. Measured with int8: 1.30-1.36x on stacks, 4.0x on a single image (see bench/PADDING_SKIP.md); output identical.
 2. Use the real image size instead of padding to 1024x1024.
 3. Measure Dice against the number of augmentation variants (only 1 and 8 were measured).
-4. Combined int8 + padding skip: available now; expected about 1.7x over fp32 (not measured).
+4. Combined int8 + padding skip: measured 1.75-1.80x over fp32 with padding.
 5. Try other int8 calibration methods (percentile, more images).
 
 ## Corrections made during development

@@ -13,7 +13,7 @@ CDeep3M2 predicts through a custom Caffe fork that needs an NVIDIA GPU, `nvidia-
 CPUs and on any GPU with a Vulkan driver, and leaves the rest of the pipeline
 (preprocessing, augmentation, ensembling, merging) unchanged.
 
-## Measured results (1fm, SBEM mitochondria model, 11 test images of 1024x1024)
+## Measured results (1fm, SBEM mitochondria model, 11 test images of 1024x1024; Caffe and fp32 rows predate the padding skip)
 | Engine | 1 variant | 8 variants (full quality) | Per slice |
 |---|---|---|---|
 | Caffe CPU (8 BLAS threads) | 114 s | 863 s | 7.3 s |
@@ -44,7 +44,19 @@ CPUs and on any GPU with a Vulkan driver, and leaves the rest of the pipeline
 
 Report: [bench/INT8_REPORT.md](bench/INT8_REPORT.md).
 
-The timings in this README were measured before the padding skip below was added; they have not been re-measured.
+### Padding skip (default for 1fm)
+The pipeline pads every stack with 2 z-slices at each end and the merge step discards their predictions,
+so for the 1fm model the ncnn backend no longer predicts them. This is the default;
+`NCNN_SKIP_EDGE=0` turns it off. Output is identical (max abs diff 0).
+
+| Job (ncnn CPU, 8 variants) | fp32 + padding | int8 + padding | **int8, no padding** | Both vs fp32 + padding |
+|---|---|---|---|---|
+| 11 test images | 262 s | 198 s | **146 s** | **1.80x** |
+| 10 validation images | 245 s | 181 s | **140 s** | **1.75x** |
+| 1 image (int8) | not run | 70.6 s | **17.5 s** | padding skip alone: 4.0x |
+
+The fp32 and with-padding numbers are the earlier measurements; only the no-padding runs were new.
+Details: [bench/PADDING_SKIP.md](bench/PADDING_SKIP.md).
 
 Full report: [bench/BENCHMARK.md](bench/BENCHMARK.md). Estimates for hardware we did not measure
 (other GPUs, phone, training) are in [docs/NOTES.md](docs/NOTES.md) and are labelled as estimates.
