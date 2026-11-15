@@ -3,7 +3,8 @@
 Run CDeep3M-trained EM segmentation models on any CPU or Vulkan GPU, no CUDA required.
 Built on [ncnn](https://github.com/Tencent/ncnn).
 
-**Status: prediction only (1fm, 3fm and 5fm).** Training is not supported (ncnn cannot train). Tested on one machine only
+**Status: prediction on ncnn for 1fm, 3fm and 5fm; training with a PyTorch trainer** (CPU, resumable after a
+shutdown, see [docs/TRAINING.md](docs/TRAINING.md)). ncnn itself cannot train. Tested on one machine only
 (Ubuntu 24.04, gcc 13, i9-11900K, Intel UHD 750).
 
 ## Why

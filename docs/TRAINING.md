@@ -59,6 +59,9 @@ training patches) before writing the model. Do not export with `--recalibrate 0`
 * Training, checkpoint, resume, export, conversion and prediction work end to end: a 30-update fine-tune of 1fm on the
   20 sample training images gave Dice 0.7155 on the validation images against 0.7241 for the original (not an
   improvement, a check that the chain does not damage the model).
+* 3fm and 5fm: 4-update fine-tunes, export and conversion also work (ncnn on the exported model vs the PyTorch
+  checkpoint: max abs difference 0.000012 for 3fm and 0.000009 for 5fm; the checkpoint reloads from the export exactly;
+  the first-layer 3D kernels stay shared).
 * **Not verified:** that training dynamics match a Caffe training run (loss curves were not compared with Caffe),
   and long runs. CPU only for now (the code is plain PyTorch; GPU support was not added or tested).
 
