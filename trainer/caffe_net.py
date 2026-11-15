@@ -285,6 +285,28 @@ class CaffeNet(nn.Module):
         logits = blobs[self.logits_blob]
         return F.softmax(logits, 1) if return_prob else logits
 
+    def recalibrate_bn(self, sampler, batches=40):
+        """Re-estimate every BatchNorm's running mean/variance for the CURRENT weights.
+
+        The running statistics are a slow moving average (time constant ~1000 forward passes), so right
+        after fine-tuning they still describe the old weights and eval-mode predictions can be badly off
+        (seen: 64% instead of 5% mitochondria pixels after 30 updates). This replaces them with the
+        cumulative average over `batches` forward passes on class-balanced training patches, in train mode
+        without gradients (the same kind of batches the statistics are averaged over in training).
+        """
+        bns = [m for m in self.modules() if isinstance(m, nn.BatchNorm2d)]
+        for b in bns:
+            b.reset_running_stats()
+            b.momentum = None                      # cumulative average
+        was_training = self.training
+        self.train()
+        with torch.no_grad():
+            for _ in range(batches):
+                self(torch.from_numpy(sampler.batch_arrays()[0]))
+        for b in bns:
+            b.momentum = 0.001
+        self.train(was_training)
+
     # ---------------------------------------------------------------- weights <-> caffemodel
     def _blobs(self, net, layer):
         for l in net.layer:
