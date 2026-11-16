@@ -122,6 +122,102 @@ IMAGE=cdeep3m-anywhere:gpu docker/run.sh downloads runprediction.sh \
 Both engines give the same segmentation (Dice 1.0000). Details: [bench/GPU_P100.md](../bench/GPU_P100.md).
 On the CPU expect several times longer; see the measurements in the main [README](../README.md).
 
+## 7. Train (optional)
+How the staged 1fm training was run on the Tesla P100: from scratch on the 20 sample training images, one polynomial
+learning-rate schedule (base lr 0.01, power 0.8, `--iter-size 1`), resumed with `--max-iter` 1000, then 3000, then
+5000 in the same run folder, so the stages are 1000, 2000 and 2000 updates. The trainer and its options are described
+in [TRAINING.md](TRAINING.md).
+
+### Training data (once)
+```
+IMAGE=cdeep3m-anywhere:gpu docker/run.sh downloads bash -c 'cd /opt/cdeep3m2 && \
+  python3 PreprocessTrainingData.py /data/mito_testsample/training/images /data/mito_testsample/training/labels 0 /data/train_data'
+```
+`0` = no secondary augmentation and no denoising. Result: 16 augmented stacks in `downloads/train_data` (913 MB).
+
+### Stage script
+Save as `downloads/train_staged/run_stages.sh` (paths are inside the container):
+```
+#!/bin/bash
+cd /opt/cdeep3m-anywhere
+R=/data/train_staged
+t_all=$(date +%s)
+for m in 1000 3000 5000; do
+  t0=$(date +%s); echo "STAGE max-iter $m start $(date '+%F %T')"
+  python3 -m trainer.train --model 1fm --deploy /data/SBEM_Mitochondria/1fm/deploy.prototxt --data /data/train_data \
+      --out $R/run --max-iter $m --iter-size 1 --base-lr 0.01 --device cuda --progress-dir $R/progress || { echo "STAGE $m FAILED"; exit 1; }
+  cp $R/run/latest.pt $R/stage_${m}.pt
+  echo "STAGE max-iter $m done in $(( $(date +%s)-t0 )) s"
+done
+echo "ALL STAGES DONE in $(( $(date +%s)-t_all )) s"
+```
+* Each stage resumes from `run/latest.pt`; the learning rate continues on the same curve (0.01 at update 1, 0.00723
+  at 1001, 0.00480 at 3001). A copy of the weights after each stage is kept as `stage_1000.pt`, `stage_3000.pt`,
+  `stage_5000.pt` (about 190 MB each).
+* To fine-tune the pretrained model instead, add
+  `--weights /data/SBEM_Mitochondria/1fm/trainedmodel/1fm_classifer_iter_80000.caffemodel` and a lower `--base-lr`
+  (e.g. 0.001) to the first stage only (later stages resume from the checkpoint).
+* No GPU: use `--device cpu` (about 3.3 s per update on an i9-11900K instead of 0.2 s).
+* `--progress-dir` keeps the progress files out of the repository's `progress/` folder, which `tools/autopush.sh` pushes.
+
+### Start it in the background
+```
+mkdir -p downloads/train_staged     # and save run_stages.sh there
+docker run -d --name cdeep3m-train-staged --gpus 'all,"capabilities=compute,utility,graphics"' \
+    --user "$(id -u):$(id -g)" --shm-size=2g -v "$PWD/downloads":/data -w /data cdeep3m-anywhere:gpu \
+    bash -c 'bash /data/train_staged/run_stages.sh > /data/train_staged/train.log 2>&1'
+```
+`-d` detaches the container from the terminal, so the training keeps running when the SSH/PuTTY session closes or
+goes idle. To restart after an interruption, `docker rm cdeep3m-train-staged` and run the same command again: every
+stage resumes from `run/latest.pt` (saved every 100 updates and every 10 minutes), and finished stages end at once.
+
+### Watch it
+```
+grep STAGE downloads/train_staged/train.log                   # stage start/end times
+tail -2 downloads/train_staged/train.log                        # e.g. update 149/1000  lr 0.00880  loss 0.25754 (avg16 0.24580)  0.2s
+cat downloads/train_staged/progress/1fm.json                    # latest update, loss, elapsed time
+docker ps --filter name=cdeep3m-train-staged                    # still running?
+nvidia-smi                                                      # GPU in use
+```
+The container clock is UTC, so the times in `train.log` are UTC.
+
+A status line every 10 minutes, written to a file by a process that also survives a closed session: save as
+`downloads/train_staged/reporter.sh` and start it with
+`cd downloads/train_staged && chmod +x reporter.sh && setsid nohup ./reporter.sh >> report.log 2>&1 < /dev/null &`
+```
+#!/bin/bash
+R=$(cd "$(dirname "$0")" && pwd)
+line() {
+  python3 - "$R" <<'PY'
+import json, sys, os
+try:
+    j = json.load(open(os.path.join(sys.argv[1], "progress", "1fm.json")))
+    print("update %d (stage max-iter %d of 1000/3000/5000), %.1f%% of 5000, avg loss %.4f, elapsed %.1f min"
+          % (j["update"], j["max_iter"], 100.0 * j["update"] / 5000, j["avg_loss_last_16"], j["elapsed_hours"] * 60))
+except Exception as e:
+    print("no progress yet (%s)" % e.__class__.__name__)
+PY
+}
+while true; do
+  st=$(docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' cdeep3m-train-staged 2>/dev/null)
+  stages=$(grep -E "^STAGE .* done|FAILED|ALL STAGES" $R/train.log 2>/dev/null | tr '\n' ';')
+  if [[ "$st" != running* ]]; then echo "$(date '+%F %T') FINAL container=$st | $(line) | $stages"; break; fi
+  echo "$(date '+%F %T') REPORT | $(line) | $stages"
+  for i in $(seq 1 60); do sleep 10; docker inspect -f '{{.State.Running}}' cdeep3m-train-staged 2>/dev/null | grep -q true || break; done
+done
+```
+Read it with `cat downloads/train_staged/report.log`. Tip: start long interactive work inside `tmux` so the session
+itself survives a disconnect (`tmux new -s work`, later `tmux attach -t work`).
+
+### Speed (Tesla P100)
+About 0.2 s per update (about 0.26 s including the checkpoint saves), so the 5000 updates take about 22 minutes;
+the same recipe on the CPU (i9-11900K, 8 threads) took 3.3 s per update, about 4.6 hours.
+
+### Use the trained model
+Export to a `.caffemodel` (this re-estimates the BatchNorm statistics; the original model only serves as a layout
+template), then convert and predict as in steps 5 and 6. See [TRAINING.md](TRAINING.md) for why the re-estimation
+matters.
+
 ## Troubleshooting
 | Problem | Fix |
 |---|---|
