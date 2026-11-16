@@ -15,3 +15,6 @@ __pycache__/
 *.pyc
 *.tmp
 progress/autopush.log
+
+# tools/modelDownload.sh default destination
+downloads/
