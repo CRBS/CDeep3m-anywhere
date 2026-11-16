@@ -84,7 +84,10 @@ device=cuda; [ "$choice" = cpu ] && device=cpu     # the ROCm build also calls i
 echo "training with PyTorch: $choice (python: $py, --device $device)"
 
 mkdir -p "$out"
+# small progress files for git (tools/autopush.sh); skipped when the folder is not writable (e.g. in a container)
+prog=${CDEEP3M_PROGRESS_DIR:-$here/progress}; pargs=()
+if mkdir -p "$prog" 2>/dev/null && [ -w "$prog" ]; then pargs=(--progress-dir "$prog"); fi
 cd "$here" || exit 1
 nohup "$py" -m trainer.train --model "$model" --deploy "$deploy" --data "$data" --out "$out" \
-      --progress-dir "$here/progress" --device "$device" "$@" >> "$out/train.log" 2>&1 &
+      "${pargs[@]}" --device "$device" "$@" >> "$out/train.log" 2>&1 &
 echo "training started in the background (pid $!), log: $out/train.log"
