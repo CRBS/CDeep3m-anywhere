@@ -81,4 +81,9 @@ singularity exec --nv -B /path/to/data:/data cdeep3m-anywhere.sif runprediction.
 ```
 
 ## What is tested
-See the "Status" lines at the end of this file; anything not listed there has not been run.
+Status (2026-11-15):
+
+* Tested: the Dockerfile passes `docker build --check`; the first stage builds (ncnn tools without OpenCV,
+  CDeep3M2 at 67d6308, `caffe.proto`).
+* Not tested yet: the second (runtime) stage, running prediction, conversion or training inside the image,
+  the CUDA PyTorch variants, Vulkan inside a container, the Singularity conversion.
