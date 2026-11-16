@@ -45,8 +45,27 @@ def read_frames(model_dir):
     return 1
 
 
+def pick_device():
+    """Device for --device auto: 'vulkan <index>' of the first discrete Vulkan GPU, otherwise 'cpu'.
+
+    Integrated GPUs are not chosen: the Intel UHD 750 was about 9x slower than the CPU.
+    """
+    try:
+        for i in range(ncnn.get_gpu_count()):
+            if ncnn.get_gpu_info(i).type() == 0:      # 0 discrete, 1 integrated, 2 virtual, 3 cpu
+                return "vulkan %d" % i
+    except Exception as e:                            # no Vulkan loader or driver
+        print("note: no Vulkan GPU (%s)" % e, file=sys.stderr)
+    return "cpu"
+
+
 def main():
+    if "--pick-device" in sys.argv[1:]:
+        print(pick_device())
+        return
     ap = argparse.ArgumentParser()
+    ap.add_argument("--pick-device", action="store_true",
+                    help="only print the device --device auto would use ('vulkan <index>' or 'cpu') and exit")
     ap.add_argument("--model-dir", required=True, help="dir with model.param and model.bin")
     ap.add_argument("--data", required=True, help="input image_stacks_vN.h5")
     ap.add_argument("--predict", required=True, help="output prefix, e.g. <dir>/test.h5")

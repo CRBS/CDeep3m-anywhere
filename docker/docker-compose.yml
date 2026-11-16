@@ -46,4 +46,4 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu]
+              capabilities: [gpu, compute, utility, graphics]   # graphics: Vulkan for ncnn

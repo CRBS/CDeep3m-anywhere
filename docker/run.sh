@@ -14,8 +14,13 @@ data=$(readlink -f "$1"); shift
 IMAGE=${IMAGE:-cdeep3m-anywhere:cpu}
 GPU=${GPU:-auto}
 gpu=()
-if [ "$GPU" = on ] || { [ "$GPU" = auto ] && docker info 2>/dev/null | grep -qi 'runtimes:.*nvidia'; }; then
-  gpu=(--gpus all)
+# NVIDIA GPU: the host has a working driver and the container toolkit (an "nvidia" runtime, or the
+# nvidia-container-cli hook that `--gpus` uses). "graphics" is needed for Vulkan (ncnn --device vulkan).
+has_toolkit() {
+  docker info 2>/dev/null | grep -qi 'runtimes:.*nvidia' || command -v nvidia-container-cli >/dev/null 2>&1
+}
+if [ "$GPU" = on ] || { [ "$GPU" = auto ] && nvidia-smi -L >/dev/null 2>&1 && has_toolkit; }; then
+  gpu=(--gpus 'all,"capabilities=compute,utility,graphics"')
 fi
 tty=(); [ -t 0 ] && tty=(-it)
 exec docker run --rm "${tty[@]}" "${gpu[@]}" --user "$(id -u):$(id -g)" --shm-size=2g \

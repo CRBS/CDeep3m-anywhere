@@ -45,8 +45,18 @@ ARG TORCH_SPEC=torch
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 python3-venv python3-pip ca-certificates git patch parallel bc time util-linux procps protobuf-compiler \
-        libgomp1 libprotobuf32t64 libvulkan1 vulkan-tools \
+        libgomp1 libprotobuf32t64 libvulkan1 vulkan-tools libegl1 libxext6 libx11-6 \
     && rm -rf /var/lib/apt/lists/*
+# Vulkan on NVIDIA: the container toolkit mounts the driver libraries (with the "graphics" capability) but older
+# toolkits do not mount these two small files, and the driver's Vulkan library needs libEGL (GLVND), libXext and
+# libX11. Without them vkCreateInstance fails with ERROR_INCOMPATIBLE_DRIVER and ncnn sees no GPU.
+# The files only name the driver libraries, so they are the same for every driver version; on hosts without an
+# NVIDIA driver the Vulkan loader skips them.
+RUN mkdir -p /usr/share/vulkan/icd.d /usr/share/glvnd/egl_vendor.d \
+    && printf '{"file_format_version": "1.0.0", "ICD": {"library_path": "libGLX_nvidia.so.0", "api_version": "1.2.175"}}\n' \
+        > /usr/share/vulkan/icd.d/nvidia_icd.json \
+    && printf '{"file_format_version": "1.0.0", "ICD": {"library_path": "libEGL_nvidia.so.0"}}\n' \
+        > /usr/share/glvnd/egl_vendor.d/10_nvidia.json
 RUN python3 -m venv /opt/venv
 ENV PATH=/opt/venv/bin:$PATH
 RUN pip install --no-cache-dir ncnn numpy h5py pillow opencv-python-headless scikit-image joblib imageio \

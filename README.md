@@ -101,7 +101,9 @@ Full report: [bench/BENCHMARK.md](bench/BENCHMARK.md). Estimates for hardware we
    ```
    ./runprediction.sh --models 1fm --denoise 0 --augspeed 1 --backend ncnn --device cpu <model> <images> <out>
    ```
-   Use `--device vulkan` for a Vulkan GPU. The default precision is int8 when `<model>/<m>/ncnn/int8/` exists and the device is the CPU (otherwise fp32); `NCNN_PRECISION=fp32` forces fp32. `--denoise 0` is needed unless `prox_tv` is installed
+   `--device auto` (the default) uses the first discrete Vulkan GPU when ncnn finds one and the CPU otherwise
+   (integrated GPUs stay on the CPU, which was faster); `--device vulkan` or `--device cpu` forces one. In Docker,
+   Vulkan on NVIDIA needs the `graphics` driver capability, which `docker/run.sh` passes (see [docker/README.md](docker/README.md)). The default precision is int8 when `<model>/<m>/ncnn/int8/` exists and the device is the CPU (otherwise fp32); `NCNN_PRECISION=fp32` forces fp32. `--denoise 0` is needed unless `prox_tv` is installed
    and you use a denoised model. Results are in `<out>/ensembled/Segmented_*.png`.
 
 Optional, to compare with Caffe: build the Caffe fork CPU-only with

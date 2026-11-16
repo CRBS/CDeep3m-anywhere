@@ -76,7 +76,12 @@ python -m trainer.train --model 1fm --deploy /data/model/1fm/deploy.prototxt --d
 ## GPU on the host
 * **NVIDIA**: install the driver and the [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html),
   then check with `docker run --rm --gpus all cdeep3m-anywhere:cpu nvidia-smi`. For ncnn on the GPU check
-  `docker run --rm --gpus all cdeep3m-anywhere:cpu vulkaninfo --summary` and use `--device vulkan`.
+  `docker run --rm --gpus 'all,"capabilities=compute,utility,graphics"' cdeep3m-anywhere:cpu vulkaninfo --summary`
+  (Vulkan needs the `graphics` capability; `docker/run.sh` passes it). `--device auto` then uses the GPU
+  (the first discrete Vulkan GPU; integrated GPUs stay on the CPU, which was faster), or pass `--device vulkan`.
+  If `vulkaninfo` reports `ERROR_INCOMPATIBLE_DRIVER`, the image is older than the fix that adds `libegl1` and the
+  NVIDIA ICD/EGL vendor files (seen with driver 470 and container toolkit 1.5): rebuild it.
+* If `docker build` hangs at `apt-get update`, the build container may have no network: add `--network host`.
 * **AMD / Intel (Mesa)**: pass the render device, `docker run --device /dev/dri ...`, and install
   `mesa-vulkan-drivers` in the image (add it to the `apt-get install` line).
 * **No GPU**: nothing to do; `--device cpu` works everywhere.

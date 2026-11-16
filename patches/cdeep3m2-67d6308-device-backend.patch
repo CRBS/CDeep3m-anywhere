@@ -1,6 +1,6 @@
 diff -ruN a/caffepredict.sh b/caffepredict.sh
---- a/caffepredict.sh	2026-11-15 10:12:27.033012621 -0800
-+++ b/caffepredict.sh	2026-11-15 10:12:27.033570169 -0800
+--- a/caffepredict.sh	2026-11-15 20:52:35.419755248 -0800
++++ b/caffepredict.sh	2026-11-15 20:53:03.591705610 -0800
 @@ -12,6 +12,8 @@
  fi
  
@@ -10,15 +10,16 @@ diff -ruN a/caffepredict.sh b/caffepredict.sh
  
  function usage()
  {
-@@ -39,12 +41,18 @@
+@@ -39,12 +41,19 @@
    -h, --help           show this help message and exit
    --gpu                Which GPU to use, can be a number ie 0 or 1 or
                         all to use all GPUs (default $gpu)
 +  --backend            caffe (default) or ncnn. ncnn needs the converted
 +                       model in <model dir>/ncnn/ and supports --device
 +                       cpu or vulkan (any Vulkan GPU).
-+  --device             auto, cpu, gpu (caffe/CUDA) or vulkan (ncnn). auto uses an NVIDIA GPU if
-+                       nvidia-smi reports one, otherwise the CPU.
++  --device             auto, cpu, gpu (caffe/CUDA) or vulkan (ncnn). auto: with caffe an NVIDIA GPU
++                       if nvidia-smi reports one, with ncnn the first discrete Vulkan GPU;
++                       otherwise the CPU.
 +                       (default $device)
  
      " 1>&2;
@@ -30,7 +31,7 @@ diff -ruN a/caffepredict.sh b/caffepredict.sh
  eval set -- "$TEMP"
  
  while true ; do
-@@ -52,6 +60,8 @@
+@@ -52,6 +61,8 @@
          -h ) usage ;;
          --help ) usage ;;
          --gpu ) gpu=$2 ; shift 2 ;;
@@ -39,15 +40,26 @@ diff -ruN a/caffepredict.sh b/caffepredict.sh
          --) shift ; break ;;
      esac
  done
-@@ -91,9 +101,40 @@
+@@ -91,9 +102,55 @@
    fatal_error "$out_dir" "ERROR unable to create $log_dir" 3
  fi
  
 -gpucount=$(nvidia-smi -L | wc -l)
 -if [ "$gpucount" -eq 0 ] ; then
 -  fatal_error "$out_dir" "ERROR unable to get count of GPU(s). Is nvidia-smi working?" 4
++# ncnn: --gpu <n> selects the Vulkan device; auto takes the first discrete Vulkan GPU, else the CPU
++ncnn_gpu_index=0
++if [[ "$gpu" =~ ^[0-9]+$ ]] ; then
++  ncnn_gpu_index=$gpu
++fi
 +if [ "$backend" == "ncnn" ] && [ "$device" == "auto" ] ; then
-+  device="cpu"
++  pick=$(python3 "${script_dir}/ncnn_predict.py" --pick-device 2>/dev/null)
++  if [[ "$pick" == vulkan* ]] ; then
++    device="vulkan"
++    ncnn_gpu_index=${pick#vulkan }
++  else
++    device="cpu"
++  fi
 +fi
 +
 +if [ "$device" == "auto" ] ; then
@@ -62,7 +74,11 @@ diff -ruN a/caffepredict.sh b/caffepredict.sh
 +  if [ "$device" != "cpu" ] && [ "$device" != "vulkan" ] ; then
 +    fatal_error "$out_dir" "ERROR ncnn backend needs --device cpu or vulkan" 4
 +  fi
-+  echo "Running prediction with ncnn on $device"
++  if [ "$device" == "vulkan" ] ; then
++    echo "Running prediction with ncnn on vulkan (GPU $ncnn_gpu_index)"
++  else
++    echo "Running prediction with ncnn on $device"
++  fi
 +  gpu="0"
 +  gpucount=1
 +elif [ "$device" == "vulkan" ] ; then
@@ -83,7 +99,7 @@ diff -ruN a/caffepredict.sh b/caffepredict.sh
  fi
  
  (( maxgpuindex=$gpucount-1 ))
-@@ -105,7 +146,7 @@
+@@ -105,7 +162,7 @@
    else
      echo " Using only GPU $gpu"
    fi
@@ -92,7 +108,7 @@ diff -ruN a/caffepredict.sh b/caffepredict.sh
    echo "Single GPU detected."
  fi
  
-@@ -116,6 +157,11 @@
+@@ -116,6 +173,11 @@
    (( gpucount=1 ))
  fi
  
@@ -104,13 +120,13 @@ diff -ruN a/caffepredict.sh b/caffepredict.sh
  theargs=""
  parallel_job_file="$out_dir/parallel.jobs"
  for input_file in $(find "${in_dir}" -name "*.h5" -type f | sort -V) ;
-@@ -176,7 +222,11 @@
+@@ -176,7 +238,11 @@
      ;;
      # The gpu number makes the final command string
      5)
 -    echo "GLOG_logtostderr=\"${job_array[0]}\" /usr/bin/time -p $CAFFE_PATH/.build_release/tools/predict_seg_new.bin --model=${job_array[1]}/deploy.prototxt --weights=${job_array[2]} --data=${job_array[3]} --predict=${job_array[4]}/test.h5 --shift_axis=2 --shift_stride=1 --gpu=$line >> \"$out_log\" 2>&1" >> "$cmdlets"
 +    if [ "$backend" == "ncnn" ] ; then
-+      echo "/usr/bin/time -p python3 ${script_dir}/ncnn_predict.py --model-dir ${job_array[1]}/ncnn --data ${job_array[3]} --predict ${job_array[4]}/test.h5 --device $device ${NCNN_PRECISION:+--precision $NCNN_PRECISION} --skip-edge $skip_edge >> \"$out_log\" 2>&1" >> "$cmdlets"
++      echo "/usr/bin/time -p python3 ${script_dir}/ncnn_predict.py --model-dir ${job_array[1]}/ncnn --data ${job_array[3]} --predict ${job_array[4]}/test.h5 --device $device --gpu-index $ncnn_gpu_index ${NCNN_PRECISION:+--precision $NCNN_PRECISION} --skip-edge $skip_edge >> \"$out_log\" 2>&1" >> "$cmdlets"
 +    else
 +      echo "GLOG_logtostderr=\"${job_array[0]}\" /usr/bin/time -p $CAFFE_PATH/.build_release/tools/predict_seg_new.bin --model=${job_array[1]}/deploy.prototxt --weights=${job_array[2]} --data=${job_array[3]} --predict=${job_array[4]}/test.h5 --shift_axis=2 --shift_stride=1 --gpu=$line >> \"$out_log\" 2>&1" >> "$cmdlets"
 +    fi
@@ -118,8 +134,8 @@ diff -ruN a/caffepredict.sh b/caffepredict.sh
      *)
      echo "I should never be here in default"
 diff -ruN a/configs/check_limits.py b/configs/check_limits.py
---- a/configs/check_limits.py	2026-11-15 10:12:27.037077485 -0800
-+++ b/configs/check_limits.py	2026-11-15 10:12:27.037620059 -0800
+--- a/configs/check_limits.py	2026-11-15 20:52:35.419755248 -0800
++++ b/configs/check_limits.py	2026-11-15 20:52:35.707754740 -0800
 @@ -14,10 +14,13 @@
  
  #json.load('./configs/cpu_resources.txt')
@@ -141,8 +157,8 @@ diff -ruN a/configs/check_limits.py b/configs/check_limits.py
 +                cpu_limits = json.load(json_file)
      return cpu_limits
 diff -ruN a/Create_overlays.py b/Create_overlays.py
---- a/Create_overlays.py	2026-11-15 10:12:27.040959655 -0800
-+++ b/Create_overlays.py	2026-11-15 10:12:27.041549970 -0800
+--- a/Create_overlays.py	2026-11-15 20:52:35.415755255 -0800
++++ b/Create_overlays.py	2026-11-15 20:52:35.707754740 -0800
 @@ -42,15 +42,17 @@
      file_in = os.path.join(inputfolder_raw, file_list_raw[x])
      # sys.stdout.write('Loading: ' + str(file_in) + ' -> ')
@@ -173,8 +189,8 @@ diff -ruN a/Create_overlays.py b/Create_overlays.py
      file_out = os.path.join(outputfolder, 'overlay_%04d.png' % (x+1) )
      sys.stdout.write('Saving: ' + str(file_out) + '\n')
 diff -ruN a/predictworker.sh b/predictworker.sh
---- a/predictworker.sh	2026-11-15 10:12:27.044711773 -0800
-+++ b/predictworker.sh	2026-11-15 10:12:27.045269979 -0800
+--- a/predictworker.sh	2026-11-15 20:52:35.475755149 -0800
++++ b/predictworker.sh	2026-11-15 20:52:35.707754740 -0800
 @@ -13,6 +13,8 @@
  fi
  
@@ -229,8 +245,8 @@ diff -ruN a/predictworker.sh b/predictworker.sh
              if [ $ecode != 0 ] ; then
                  fatal_error "$out_dir" "ERROR, a non-zero exit code ($ecode) was received from: caffepredict.sh" 4
 diff -ruN a/runprediction.sh b/runprediction.sh
---- a/runprediction.sh	2026-11-15 10:12:27.048607827 -0800
-+++ b/runprediction.sh	2026-11-15 10:12:27.049210102 -0800
+--- a/runprediction.sh	2026-11-15 20:52:35.475755149 -0800
++++ b/runprediction.sh	2026-11-15 20:53:03.591705610 -0800
 @@ -26,6 +26,8 @@
  model_list="1fm,3fm,5fm"
  aug_speed="1"
@@ -240,18 +256,19 @@ diff -ruN a/runprediction.sh b/runprediction.sh
  
  function usage()
  {
-@@ -53,6 +55,10 @@
+@@ -53,6 +55,11 @@
                         as well as for the training phase (in PreprocessTrainingData.py).
    --gpu                Which GPU to use, can be a number ie 0 or 1 or
                         all to use all GPUs (default $gpu)
 +  --backend            caffe (default) or ncnn (cpu or any Vulkan GPU)
-+  --device             auto, cpu, gpu or vulkan. auto uses an NVIDIA GPU if
-+                       nvidia-smi reports one, otherwise the CPU.
++  --device             auto, cpu, gpu or vulkan. auto: with caffe an NVIDIA GPU
++                       if nvidia-smi reports one, with ncnn the first discrete Vulkan GPU;
++                       otherwise the CPU.
 +                       (default $device)
    --models             Only run prediction on models specified
                         in comma delimited list. (default $model_list)
    --augspeed           Augmentation speed. Higher the number
-@@ -70,7 +76,7 @@
+@@ -70,7 +77,7 @@
      exit 1;
  }
  
@@ -260,7 +277,7 @@ diff -ruN a/runprediction.sh b/runprediction.sh
  eval set -- "$TEMP"
  
  while true ; do
-@@ -79,6 +85,8 @@
+@@ -79,6 +86,8 @@
          --help ) usage ;;
          --denoise ) denoise=$2 ; shift 2 ;;    
          --gpu ) gpu=$2 ; shift 2 ;;
@@ -269,7 +286,7 @@ diff -ruN a/runprediction.sh b/runprediction.sh
          --models ) model_list=$2 ; shift 2 ;;
          --augspeed ) aug_speed=$2 ; shift 2 ;;
          --maxpackages ) maxpackages=$2 ; shift 2 ;;
-@@ -190,7 +198,7 @@
+@@ -190,7 +199,7 @@
  "${script_dir}"/preprocessworker.sh --maxpackages "$maxpackages" "$out_dir" >> "$log_dir/preprocess.log" 2>&1 &
  
  echo "Start up worker to run prediction on packages"
