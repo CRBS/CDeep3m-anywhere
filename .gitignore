@@ -18,3 +18,7 @@ progress/autopush.log
 
 # tools/modelDownload.sh default destination
 downloads/
+
+# Singularity image and its build files (too large for git)
+singularity/*.sif
+singularity/build_tmp/
