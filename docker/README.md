@@ -22,7 +22,7 @@ come inside the PyTorch wheel; nothing else has to be installed on the host.
 | Host driver | Build arguments |
 |---|---|
 | 450.80 to 524 (for example 470.x) | `--build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu118 --build-arg TORCH_SPEC="torch==2.7.1"` |
-| 525.60 or newer | `--build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu126` |
+| 525.60 or newer | `--build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu126` (the cu118 build above also works) |
 
 ```
 docker build -f docker/Dockerfile -t cdeep3m-anywhere:cu118 \
@@ -93,7 +93,12 @@ singularity exec --nv -B /path/to/data:/data cdeep3m-anywhere.sif runprediction.
 ## What is tested
 Status (2026-11-15):
 
-* Tested: the Dockerfile passes `docker build --check`; the first stage builds (ncnn tools without OpenCV,
-  CDeep3M2 at 67d6308, `caffe.proto`).
-* Not tested yet: the second (runtime) stage, running prediction, conversion or training inside the image,
-  the CUDA PyTorch variants, Vulkan inside a container, the Singularity conversion.
+* Tested on a machine without a GPU, both services built with `docker compose` (`cpu` 2.6 GB with
+  torch 2.15 CPU, `gpu` 10 GB with torch 2.7.1+cu118), run as a normal user (`--user 1000:1000`):
+  1. 1fm conversion to ncnn with int8 calibration
+  2. `runprediction.sh` with `--backend ncnn --device cpu` (int8) on 3 validation images, Dice 0.7142
+  3. `tools/train_bg.sh --torch auto` for 3 updates (chose the CPU in both images, 3.2 s per update)
+  4. `trainer.export_caffemodel` with BatchNorm re-estimation
+  5. 3fm conversion (multi-frame path)
+* Not tested: training or prediction on a GPU inside a container (CUDA, ROCm, Vulkan), the interactive
+  question of `--torch auto`, 5fm, long training runs, the Singularity conversion.
