@@ -25,7 +25,9 @@ CPUs and on any GPU with a Vulkan driver, and leaves the rest of the pipeline
 * Accuracy on 10 labelled validation images: Dice 0.724 with 1 variant, **0.840 with 8 variants**
   (IoU 0.725, precision 0.769, recall 0.926). The pretrained model may have seen related data,
   so treat this as indicative, not a clean test score.
-* The Intel iGPU is slower than the CPU here. Vulkan only pays off on faster GPUs, which we have not tested.
+* The Intel iGPU is slower than the CPU here. On a discrete GPU Vulkan pays off: on a Tesla P100, ncnn Vulkan ran the
+  8-variant test in 93 s against 353 s for the original Caffe on CUDA (3.8x), with identical output
+  ([bench/GPU_P100.md](bench/GPU_P100.md)).
 * fp16 on the Intel iGPU changed the output slightly, so the runner uses fp32.
 
 ### int8 quantization (ncnn CPU)

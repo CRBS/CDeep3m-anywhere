@@ -1,0 +1,5 @@
+run	engine	device	precision	augspeed	variants	predict_step_s	start_to_last_segmentation_s	wall_s
+ncnn_vulkan_a10	ncnn (--device auto)	Vulkan, Tesla P100	fp32	10	1	12.3	18.4	21.2
+caffe_gpu_a10	Caffe (CDeep3M2 2.1.5)	CUDA 11.3, Tesla P100	fp32	10	1	44.3	64.0	not recorded
+ncnn_vulkan_a1	ncnn (--device auto)	Vulkan, Tesla P100	fp32	1	8	93.3	101.4	103.4
+caffe_gpu_a1	Caffe (CDeep3M2 2.1.5)	CUDA 11.3, Tesla P100	fp32	1	8	353.4	369.4	372.2
