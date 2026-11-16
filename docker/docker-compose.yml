@@ -1,0 +1,49 @@
+# CDeep3M-anywhere with Docker Compose. Run from the repository root.
+#
+#   build:   docker compose -f docker/docker-compose.yml build cpu          (or: gpu)
+#   shell:   DATA=/path/to/data docker compose -f docker/docker-compose.yml run --rm cpu
+#   command: DATA=/path/to/data docker compose -f docker/docker-compose.yml run --rm cpu \
+#                runprediction.sh --models 1fm --denoise 0 --backend ncnn --device cpu /data/model /data/images /data/out
+#
+# DATA     host folder mounted at /data (default: ./data)
+# UID_GID  user:group that owns the files written to /data (default 1000:1000; use "$(id -u):$(id -g)")
+#
+# Services
+#   cpu  works on any machine. PyTorch CPU build.
+#   gpu  for a host with an NVIDIA GPU and the NVIDIA container toolkit. PyTorch CUDA build; the same image
+#        also runs on the CPU when no GPU is visible. Choose the CUDA build that fits the host DRIVER with
+#        TORCH_INDEX / TORCH_SPEC (defaults: CUDA 11.8, for drivers 450.80 and newer).
+
+x-common: &common
+  volumes:
+    - ${DATA:-./data}:/data
+  working_dir: /data
+  user: "${UID_GID:-1000:1000}"
+  shm_size: 2g
+  stdin_open: true
+  tty: true
+
+services:
+  cpu:
+    <<: *common
+    image: cdeep3m-anywhere:cpu
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+
+  gpu:
+    <<: *common
+    image: cdeep3m-anywhere:gpu
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        TORCH_INDEX: ${TORCH_INDEX:-https://download.pytorch.org/whl/cu118}
+        TORCH_SPEC: ${TORCH_SPEC:-torch==2.7.1}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

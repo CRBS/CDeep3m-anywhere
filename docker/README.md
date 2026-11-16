@@ -32,6 +32,16 @@ docker build -f docker/Dockerfile -t cdeep3m-anywhere:cu118 \
 Note: `trainer/train.py` runs on the CPU only at the moment. The CUDA image is the environment for GPU
 training once the trainer has a device option; it does not make training faster by itself.
 
+## Docker Compose (the simplest way)
+`docker/docker-compose.yml` has two services: `cpu` (any machine) and `gpu` (NVIDIA; falls back to the CPU).
+
+```
+docker compose -f docker/docker-compose.yml build gpu
+DATA=/path/to/data UID_GID="$(id -u):$(id -g)" docker compose -f docker/docker-compose.yml run --rm gpu
+```
+
+Inside, `tools/train_bg.sh --torch auto ...` detects the hardware and picks the PyTorch device.
+
 ## Run
 ```
 docker/run.sh /path/to/data                       # interactive shell, the folder is mounted at /data

@@ -302,7 +302,7 @@ class CaffeNet(nn.Module):
         self.train()
         with torch.no_grad():
             for _ in range(batches):
-                self(torch.from_numpy(sampler.batch_arrays()[0]))
+                self(torch.from_numpy(sampler.batch_arrays()[0]).to(next(self.parameters()).device))
         for b in bns:
             b.momentum = 0.001
         self.train(was_training)

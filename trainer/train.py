@@ -61,12 +61,22 @@ def main(argv=None):
     ap.add_argument("--checkpoint-every", type=int, default=100, help="also every N updates")
     ap.add_argument("--keep", type=int, default=3, help="numbered checkpoints to keep (plus latest.pt)")
     ap.add_argument("--progress-dir", help="write small progress .csv/.json here (tracked by git)")
+    ap.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"],
+                    help="auto = the GPU if this PyTorch build sees one (CUDA or ROCm build), otherwise the CPU")
+    ap.add_argument("--gpu", type=int, default=0, help="GPU index for --device cuda/auto")
     a = ap.parse_args(argv)
 
     torch.set_num_threads(a.threads)
+    if a.device != "cpu" and torch.cuda.is_available():
+        dev = torch.device("cuda:%d" % a.gpu)
+        dev_name = "%s (%s)" % (dev, torch.cuda.get_device_name(a.gpu))
+    elif a.device == "cuda":
+        raise SystemExit("--device cuda: this PyTorch build (%s) sees no GPU; use --device cpu or another PyTorch build" % torch.__version__)
+    else:
+        dev, dev_name = torch.device("cpu"), "cpu"
     os.makedirs(a.out, exist_ok=True)
     run = "%s" % a.model
-    net = CaffeNet(a.deploy)
+    net = CaffeNet(a.deploy).to(dev)
     expect = {"1fm": 1, "3fm": 3, "5fm": 5}[a.model]
     assert net.frames == expect, "deploy.prototxt has %d frames, model %s needs %d" % (net.frames, a.model, expect)
     torch.manual_seed(a.seed)
@@ -132,7 +142,8 @@ def main(argv=None):
             json.dump(st, open(os.path.join(a.progress_dir, "%s.json" % run), "w"), indent=1)
 
     net.train()
-    print("starting at update %d of %d (iter_size %d, batch %d, %d threads)" % (it, a.max_iter, a.iter_size, a.batch, a.threads), flush=True)
+    print("starting at update %d of %d (iter_size %d, batch %d, %d threads, device %s, torch %s)" % (
+        it, a.max_iter, a.iter_size, a.batch, a.threads, dev_name, torch.__version__), flush=True)
     try:
         while it < a.max_iter:
             lr = poly_lr(a.base_lr, it, a.max_iter, a.power)
@@ -143,8 +154,8 @@ def main(argv=None):
                 if stop["flag"]:
                     raise Stop()
                 x, y = sampler.batch_arrays()
-                logits = net(torch.from_numpy(x))
-                back, rep = balanced_softmax_loss(logits, torch.from_numpy(y), sampler.rates, loss_rng)
+                logits = net(torch.from_numpy(x).to(dev))
+                back, rep = balanced_softmax_loss(logits, torch.from_numpy(y).to(dev), sampler.rates, loss_rng)
                 (back / a.iter_size).backward()                     # Caffe normalises accumulated grads by iter_size
                 back_sum += float(back) / a.iter_size
                 rep_sum += float(rep) / a.iter_size
