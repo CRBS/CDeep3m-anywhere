@@ -13,6 +13,23 @@ NVIDIA driver and container toolkit); all tools run inside the image.
 * About 12 GB of disk for the image, 1 GB for the model and data.
 * Optional NVIDIA GPU: the driver and the [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
   Check with `docker run --rm --gpus all ubuntu:24.04 nvidia-smi`. No CUDA toolkit is needed on the host.
+  ncnn uses the GPU through **Vulkan**, not CUDA, so the driver must include its graphics/Vulkan libraries.
+  A normal driver install does; a compute-only ("headless") install may not. Check on the host:
+  `ls /usr/lib/x86_64-linux-gnu/libGLX_nvidia.so.0` (must exist).
+
+### How the image makes Vulkan work on NVIDIA (nothing to do on the host)
+Without these, `vulkaninfo` in the container fails with `ERROR_INCOMPATIBLE_DRIVER` and ncnn falls back to the CPU
+(found on driver 470 with container toolkit 1.5.1). All of it is in the repository, so every rebuilt image has it:
+
+| Where | What | Why |
+|---|---|---|
+| `docker/Dockerfile` | installs `libegl1 libxext6 libx11-6` | the NVIDIA Vulkan driver library loads them |
+| `docker/Dockerfile` | writes `/usr/share/vulkan/icd.d/nvidia_icd.json` and `/usr/share/glvnd/egl_vendor.d/10_nvidia.json` | point Vulkan and EGL to the NVIDIA driver; older container toolkits do not provide them |
+| `docker/run.sh`, `docker/docker-compose.yml` | `--gpus 'all,"capabilities=compute,utility,graphics"'` | without `graphics` Docker does not mount the driver's Vulkan libraries |
+
+The driver libraries themselves come from the host at run time (the container toolkit mounts them), so the same
+image works with any driver version. If you start containers yourself instead of with `docker/run.sh`, pass the
+`--gpus` option above.
 
 ## 2. Get the code
 ```
