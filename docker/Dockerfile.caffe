@@ -1,0 +1,16 @@
+# The original CDeep3M2 Caffe/CUDA image with the Create_overlays.py fix, as the GPU baseline for benchmarks.
+#
+#   docker build --network host -f docker/Dockerfile.caffe -t cdeep3m-caffe:fixed \
+#       --build-arg BASE=cdeep3m-2.1.5:U16C11.3 .
+#
+# BASE is an existing CDeep3M2 image (Caffe on CUDA, code in /home/cdeep3m). Its Create_overlays.py fails at the
+# last pipeline step on 3-channel (palette/RGB) PNGs such as mito_testsample/testset:
+#   cv2.error: ... Invalid number of channels in input image: 'VScn::contains(scn)' where 'scn' is 3
+# The segmentations are already written then, but the run ends with ERROR and no overlays.
+# The fix converts such images to grayscale and keeps the rescaled images uint8 (same change as in
+# cdeep3m2-67d6308-device-backend.patch). Nothing else in the image changes.
+ARG BASE=cdeep3m-2.1.5:U16C11.3
+FROM ${BASE}
+USER root
+COPY patches/cdeep3m2-create-overlays-fix.patch /tmp/
+RUN cd /home/cdeep3m && patch -p1 < /tmp/cdeep3m2-create-overlays-fix.patch && rm /tmp/cdeep3m2-create-overlays-fix.patch
