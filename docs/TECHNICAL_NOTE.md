@@ -1,10 +1,17 @@
 # Technical note: measured results
 
-Measurements behind the summary in the [README](../README.md): speed and accuracy of the ncnn backend against
-Caffe, int8 quantization, the multi-frame (3fm, 5fm) models and the padding skip.
+Speed and accuracy of the ncnn backend against Caffe, int8 quantization, the multi-frame (3fm, 5fm) models and the
+padding skip.
 
-Unless a section says otherwise, the machine is the one in the README's status line (Ubuntu 24.04, i9-11900K,
+Unless a section says otherwise, the machine is the one in the [README](../README.md)'s status line (Ubuntu 24.04, i9-11900K,
 Intel UHD 750); the GPU numbers come from a Tesla P100 ([bench/GPU_P100.md](../bench/GPU_P100.md)).
+
+## Results in short
+* ncnn on the CPU is 3.2x faster than Caffe on the CPU; on a Tesla P100, ncnn Vulkan is 3.8x faster than the
+  original Caffe on CUDA (93 s against 353 s for the 8-variant test).
+* Output matches Caffe (Dice 1.00000); accuracy on 10 labelled validation images is Dice 0.840 with 8 variants.
+* On the CPU, int8 plus skipping the padding slices make the 8-variant run 1.8x faster than fp32, with unchanged
+  accuracy.
 
 ## Measured results (1fm, SBEM mitochondria model, 11 test images of 1024x1024; Caffe and fp32 rows predate the padding skip)
 | Engine | 1 variant | 8 variants (full quality) | Per slice |

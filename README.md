@@ -13,14 +13,7 @@ CDeep3M2 predicts through a custom Caffe fork that needs an NVIDIA GPU, `nvidia-
 CPUs and on any GPU with a Vulkan driver, and leaves the rest of the pipeline
 (preprocessing, augmentation, ensembling, merging) unchanged.
 
-## Results in short
-* ncnn on the CPU is 3.2x faster than Caffe on the CPU; on a Tesla P100, ncnn Vulkan is 3.8x faster than the
-  original Caffe on CUDA (93 s against 353 s for the 8-variant test).
-* Output matches Caffe (Dice 1.00000); accuracy on 10 labelled validation images is Dice 0.840 with 8 variants.
-* On the CPU, int8 plus skipping the padding slices make the 8-variant run 1.8x faster than fp32, with unchanged
-  accuracy.
-
-Tables and details (speed, int8, 3fm/5fm, padding skip): [docs/TECHNICAL_NOTE.md](docs/TECHNICAL_NOTE.md).
+Measured speed and accuracy: [docs/TECHNICAL_NOTE.md](docs/TECHNICAL_NOTE.md).
 
 ## Quick start
 **With Docker** (nothing to install but Docker): follow [docs/DOCKER_INSTALL.md](docs/DOCKER_INSTALL.md), which builds the
