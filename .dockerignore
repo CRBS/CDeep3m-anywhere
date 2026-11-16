@@ -1,0 +1,16 @@
+.git
+**/__pycache__
+*.pyc
+*.caffemodel
+*.solverstate
+*.pt
+*.pth
+*.h5
+*.npy
+*.bin
+*.table
+checkpoints
+runs
+data
+venv
+progress
