@@ -22,9 +22,13 @@ the creation of the output folder to the last `ensembled/Segmented_*.png` (prepr
   Caffe does. That alone cuts the per-stack work from 15 to 11 slices.
 * Output: ncnn Vulkan vs Caffe CUDA Dice 1.0000; the final segmentations differ by at most 1 gray level on
   0.0015 % (1 variant) and 0.0006 % (8 variants) of the pixels.
-* The Caffe runs ended with an error in the last step, `Create_overlays.py` (OpenCV rejects the 3-channel test
-  images; the bug the patch in `patches/` fixes). The segmentations were complete, so the times up to the last
-  segmentation are valid; the total wall time of the 1-variant Caffe run was not recorded.
+* The first Caffe runs ended with an error in the last step, `Create_overlays.py` (OpenCV rejects the 3-channel
+  test images). Rerun with that fix (`docker/Dockerfile.caffe`, image `cdeep3m-caffe:fixed`) both runs finished
+  cleanly (DONE, 11 segmentations, 11 overlays) with byte-identical segmentations and the same times within 1 %:
+  prediction step 44.5 s / 353.6 s, start to last segmentation 64.1 s / 371.6 s, total wall 67.5 s / 375.1 s
+  (1 / 8 variants). The table shows the first runs.
+* Per predicted slice (ncnn 11 per stack, Caffe 15): ncnn Vulkan 1.12 s (1 variant) and 1.06 s (8 variants),
+  Caffe 2.95 s in both, so the engine alone is about 2.7x faster; the padding skip gives the rest.
 * Vulkan on this host needed the Docker fix in 0d67dfc (libEGL, the NVIDIA ICD/EGL vendor files, `graphics` capability).
 
 Raw numbers: [gpu_p100_timings.tsv](gpu_p100_timings.tsv).
