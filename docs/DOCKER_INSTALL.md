@@ -148,31 +148,55 @@ CPU (pass `--device vulkan` to force it).
 | Intel integrated (UHD, Iris Xe) | not out of the box | same Mesa change; tested outside Docker on a UHD 750: 9x **slower** than the CPU |
 | No GPU | yes | runs on the CPU (int8 when the int8 model exists) |
 
-### Caffe on CUDA (`cdeep3m-caffe:fixed`, based on `cdeep3m-2.1.5:U16C11.3`)
-Caffe in this image is built with CUDA 11.3 (no cuDNN) for sm_50, 52, 60, 61, 75 and 80, plus PTX that the driver
-compiles for newer GPUs on first use. Driver: 450 or newer for datacenter GPUs (418.x and 440.x also accepted),
-465 or newer for GeForce/RTX (`nvidia-smi` shows it).
+### Caffe on CUDA
+Two CDeep3M2 2.1.5 base images (both CUDA 11.3) cover **different GPUs**; pick the base by GPU (next section).
+Driver for both: 450 or newer for datacenter GPUs (418.x and 440.x also accepted), 465 or newer for GeForce/RTX
+(`nvidia-smi` shows it).
 
-| GPU (compute capability) | Works | How |
+| GPU (compute capability) | `cdeep3m-2.1.5:U16C11.3` (local) | `ncmir/cdeep3m:C-11_2021_09_21` (Docker Hub) |
 |---|---|---|
-| Tesla P100 (6.0) | **yes, tested** | 1 variant 68 s, 8 variants 375 s (11 images) |
-| Maxwell (5.x), P40/P4, GTX 10 (6.1), T4, RTX 20 (7.5), A100 (8.0) | expected | compiled code included |
-| V100 (7.0), A40, A10, RTX 30 (8.6), L40, RTX 40 (8.9), H100 (9.0) | expected | compiled by the driver on first use (a few extra minutes; see below) |
-| Blackwell: B200, RTX 50 (10.x, 12.x) | uncertain | newer than CUDA 11.3; test before relying on it |
-| Kepler: K80, K40 (3.x) | **no** | no code for it in this build |
+| Tesla P100 (6.0) | **yes, tested** (1 variant 68 s, 8 variants 375 s) | **no, tested**: `no kernel image is available for execution on the device` |
+| P40, P4, GTX 10 (6.1) | expected (compiled code) | no (no code for Pascal) |
+| V100 (7.0) | expected (compiled on first use) | no (no code for Volta) |
+| Maxwell (5.x) | expected (compiled code) | expected (compiled code) |
+| T4, RTX 20 (7.5), A100 (8.0) | expected (compiled code) | expected (compiled code) |
+| A40, A10, RTX 30 (8.6), L40, RTX 40 (8.9) | expected (compiled code) | expected (compiled code) |
+| H100 (9.0) | expected (compiled on first use) | expected (compiled on first use) |
+| Blackwell: B200, RTX 50 (10.x, 12.x) | uncertain (newer than CUDA 11.3) | uncertain |
+| Kepler: K80, K40 (3.x) | **no** | **no** |
+
+Compiled code (SASS) in the local image: sm_50, 52, 60, 61, 75, 80, plus PTX up to compute_80. In the Docker Hub image:
+sm_50, 75, 80, 86, plus PTX compute_86. Compiled code for sm_XY runs on GPUs X.Z with Z >= Y (same major version);
+PTX for compute_XY is compiled by the driver on first use for any GPU of version X.Y or higher. A GPU that neither
+covers fails with the error above.
+Only the P100 rows were run; the others follow from this list.
+
 
 On GPUs that compile on first use, keep the compiled code between runs by adding `-e CUDA_CACHE_PATH=/data/.nv_cache`
 to `docker run` (otherwise `--rm` and `HOME=/tmp` discard it after every run).
 
 ## Optional: the original Caffe/CUDA pipeline for comparison
-This needs an existing CDeep3M2 Caffe image on the machine (here `cdeep3m-2.1.5:U16C11.3`, built in 2021; it is
-not in a public registry). Its `Create_overlays.py` fails at the last step on 3-channel PNGs such as the test images
-(`Invalid number of channels in input image`), so first add the fix in `patches/cdeep3m2-create-overlays-fix.patch`.
+This needs a CDeep3M2 2.1.5 Caffe image as the base. Choose by GPU (table above):
+
+| Base | Get it | Use for |
+|---|---|---|
+| `ncmir/cdeep3m:C-11_2021_09_21` | public: `docker pull ncmir/cdeep3m:C-11_2021_09_21` (about 4 GB download) | Maxwell, Turing, Ampere and newer (T4, A100, A40, RTX 20/30/40, L40, H100). **Not** Pascal or Volta |
+| `cdeep3m-2.1.5:U16C11.3` | only on the server where it was built (2021, not in any registry); copy it (see below) | everything above **plus Pascal and Volta** (P100, P40, V100) |
+
+Both have the same `Create_overlays.py`, which fails at the last step on 3-channel PNGs such as the test images
+(`Invalid number of channels in input image`), so the build below adds the fix in
+`patches/cdeep3m2-create-overlays-fix.patch`. Everything else (paths, entrypoint, commands) is the same for both.
 
 ### Build (once)
+With the local base (Pascal/Volta and newer):
 ```
 docker build --network host -f docker/Dockerfile.caffe -t cdeep3m-caffe:fixed \
     --build-arg BASE=cdeep3m-2.1.5:U16C11.3 .
+```
+With the public base (Turing/Ampere and newer; Docker pulls it if needed):
+```
+docker build --network host -f docker/Dockerfile.caffe -t cdeep3m-caffe:fixed \
+    --build-arg BASE=ncmir/cdeep3m:C-11_2021_09_21 .
 ```
 This adds one small layer (the patched `Create_overlays.py`) on top of the base image and takes a few seconds.
 Check that the fix is in and the GPU is visible:
@@ -194,7 +218,8 @@ docker run --rm --gpus all --user "$(id -u):$(id -g)" -e HOME=/tmp --shm-size=2g
   to ncnn's (Dice 1.0000).
 
 ### Use the image on another machine
-The image exists only where it was built. Copy it instead of rebuilding (the other machine does not need the base image):
+With a Turing/Ampere or newer GPU, build from the public base there (above); nothing has to be copied.
+For Pascal or Volta you need the local base, which exists only where it was built. Copy it instead of rebuilding (the other machine does not need the base image):
 ```
 docker save cdeep3m-caffe:fixed | gzip > cdeep3m-caffe-fixed.tar.gz      # on this machine (several GB)
 docker load < cdeep3m-caffe-fixed.tar.gz                                # on the other machine
