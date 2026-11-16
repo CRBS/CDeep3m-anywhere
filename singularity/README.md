@@ -8,7 +8,7 @@ A Singularity/Apptainer image of the CDeep3M-anywhere Docker image (`docker/Dock
 |---|---|
 | `build.sh` | builds `cdeep3m-anywhere.sif` from the local Docker image (no root needed) |
 | `Dockerfile` | the thin layer `build.sh` adds: `gpu_check.sh` and `PYTHONNOUSERSITE=1` |
-| `install_apptainer_local.sh` | installs Apptainer without root into `~/apptainer` (for gaia, see below) |
+| `install_apptainer_local.sh` | installs Apptainer without root into `~/apptainer` (for a machine whose Singularity cannot run images, see below) |
 | `gpu_check.sh` | run inside the image: checks PyTorch CUDA (training) and Vulkan (ncnn prediction) |
 | `run.sh` | like `docker/run.sh`: mounts a data folder at `/data`, adds `--nv` when there is a GPU |
 | `expanse_predict.sbatch` | Slurm job: prediction on one V100 |
@@ -21,8 +21,8 @@ The V100 is compute capability 7.0 (`sm_70`).
   libraries, which `--nv` mounts. `gpu_check.sh` shows whether that works.
 * The optional Caffe image (`docker/Dockerfile.caffe`) is not part of this; the local Caffe build has no `sm_70` code.
 
-## What is tested (2026-11-16, on gaia, Tesla P100, driver 470)
-* Built with gaia's Singularity 3.8.3 from `cdeep3m-anywhere:gpu`: 3.8 GB `.sif` in 19 minutes (temporary files on NFS).
+## What is tested (2026-11-16, on a lab server: Ubuntu 20.04, Tesla P100, driver 470)
+* Built with the server's Singularity 3.8.3 from `cdeep3m-anywhere:gpu`: 3.8 GB `.sif` in 19 minutes (temporary files on NFS).
 * Run with Apptainer 1.3.6 installed without root (`install_apptainer_local.sh`, see below), through `run.sh` (`--nv`):
   * `gpu_check.sh`: `== ALL OK` (PyTorch CUDA works; Vulkan works with Apptainer's default `nvliblist.conf`;
     `--device auto` picks `vulkan 0`).
@@ -31,16 +31,16 @@ The V100 is compute capability 7.0 (`sm_70`).
   * Training: 50 updates on CUDA, 0.2 s per update (same as Docker), checkpoints written.
 * Not tested: Expanse and the V100. Run step 3 there first.
 
-### Running a .sif on gaia
-gaia's own Singularity can build images but not run them (`starter-suid not found`: its `libexec` files are missing).
+### Running a .sif where Singularity cannot run it
+The lab server's own Singularity can build images but not run them (`starter-suid not found`: its `libexec` files are missing).
 `singularity/install_apptainer_local.sh` puts Apptainer into `~/apptainer` without root (it downloads the Apptainer
-`.deb` from GitHub and, because gaia has no `libfuse3`, Ubuntu 20.04's `libfuse3-3`), then:
+`.deb` from GitHub and, because the server has no `libfuse3`, Ubuntu 20.04's `libfuse3-3`), then:
 ```
 export PATH=~/apptainer/usr/bin:$PATH
 singularity/run.sh downloads gpu_check.sh
 ```
 
-## 1. Build (on a machine with Docker and Singularity, e.g. gaia)
+## 1. Build (on a machine with Docker and Singularity)
 Build the Docker image first (docs/DOCKER_INSTALL.md step 3), then:
 ```
 singularity/build.sh                      # -> singularity/cdeep3m-anywhere.sif

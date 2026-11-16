@@ -1,7 +1,7 @@
 #!/bin/bash
 # Install Apptainer without root into a folder of your own (default ~/apptainer), to run .sif images on a machine
-# whose Singularity cannot run them (on gaia, `starter-suid not found`). Uses unprivileged user namespaces.
-# Tested on Ubuntu 20.04 (gaia). Afterwards: export PATH=~/apptainer/usr/bin:$PATH   (singularity/run.sh finds it)
+# whose Singularity cannot run them (for example `starter-suid not found`). Uses unprivileged user namespaces.
+# Tested on Ubuntu 20.04. Afterwards: export PATH=~/apptainer/usr/bin:$PATH   (singularity/run.sh finds it)
 #
 #   singularity/install_apptainer_local.sh [folder]
 set -e
