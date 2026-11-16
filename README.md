@@ -78,7 +78,7 @@ Full report: [bench/BENCHMARK.md](bench/BENCHMARK.md). Estimates for hardware we
    The patch adds `--device auto|cpu|gpu|vulkan` and `--backend caffe|ncnn`, removes the hard
    `nvidia-smi` requirement, and fixes two bugs: `configs/check_limits.py` only worked from the
    repo directory, and `Create_overlays.py` failed on palette PNGs with current OpenCV/scikit-image.
-2. **Python packages**: `pip install ncnn numpy h5py pillow opencv-python-headless scikit-image joblib imageio matplotlib pandas pyyaml requests`. Also install GNU `parallel` and `bc`.
+2. **Python packages**: `pip install ncnn numpy h5py pillow opencv-python-headless scikit-image joblib imageio matplotlib pandas pyyaml requests`. Also install GNU `parallel`, `bc` and GNU `time` (`/usr/bin/time`).
 3. **Get a model** from the [model zoo](https://cdeep3m.crbs.ucsd.edu/home/pre_trained_models),
    for example SBEM and ssTEM Mitochondria (DOI 10.7295/W9CDEEP3M50681). Keep its folder layout.
 4. **Build ncnn tools** (needs `libprotobuf-dev protobuf-compiler`; Vulkan needs only the normal GPU driver):

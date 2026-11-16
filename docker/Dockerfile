@@ -44,7 +44,7 @@ ARG TORCH_INDEX=https://download.pytorch.org/whl/cpu
 ARG TORCH_SPEC=torch
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 python3-venv python3-pip ca-certificates git patch parallel bc util-linux procps \
+        python3 python3-venv python3-pip ca-certificates git patch parallel bc time util-linux procps \
         libgomp1 libprotobuf32t64 libvulkan1 vulkan-tools \
     && rm -rf /var/lib/apt/lists/*
 RUN python3 -m venv /opt/venv
