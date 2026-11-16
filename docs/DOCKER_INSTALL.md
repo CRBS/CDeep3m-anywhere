@@ -131,12 +131,73 @@ On the CPU expect several times longer; see the measurements in the main [README
 | `ERROR ... Create_overlays.py` | only in the original CDeep3M2 Caffe images; this image has the fix. For those images see `docker/Dockerfile.caffe` |
 | Permission errors writing to `/data` | the folder must be writable by your user; `docker/run.sh` runs as your user id |
 
+## GPU compatibility
+Only the **Tesla P100** (Pascal, driver 470.256.02) was tested in Docker, for both engines. "Expected" rows follow
+from what the image contains and the vendors' published support; they were not run.
+
+### ncnn on Vulkan (`cdeep3m-anywhere` image, `--device auto` or `vulkan`)
+ncnn needs a Vulkan 1.0+ driver on the host. `--device auto` uses only **discrete** GPUs; an integrated GPU stays on the
+CPU (pass `--device vulkan` to force it).
+
+| GPU | Works in this image | Notes |
+|---|---|---|
+| NVIDIA Pascal: Tesla P100 | **yes, tested** | driver 470, 1 variant 21 s, 8 variants 103 s (11 images) |
+| NVIDIA Maxwell, Pascal, Volta, Turing, Ampere, Ada, Hopper, Blackwell (GTX 900 and newer, V100, T4, A100, A40, L40, H100, RTX 20/30/40/50) | expected | any driver with Vulkan; host needs `libGLX_nvidia.so.0` (see Requirements) |
+| NVIDIA Kepler (K80, GTX 600/700) | expected | Vulkan is supported up to driver 470 (the last for Kepler) |
+| AMD Radeon / Instinct (GCN and newer) | not out of the box | add `mesa-vulkan-drivers` to the image and run with `--device /dev/dri`; not tested |
+| Intel integrated (UHD, Iris Xe) | not out of the box | same Mesa change; tested outside Docker on a UHD 750: 9x **slower** than the CPU |
+| No GPU | yes | runs on the CPU (int8 when the int8 model exists) |
+
+### Caffe on CUDA (`cdeep3m-caffe:fixed`, based on `cdeep3m-2.1.5:U16C11.3`)
+Caffe in this image is built with CUDA 11.3 (no cuDNN) for sm_50, 52, 60, 61, 75 and 80, plus PTX that the driver
+compiles for newer GPUs on first use. Driver: 450 or newer for datacenter GPUs (418.x and 440.x also accepted),
+465 or newer for GeForce/RTX (`nvidia-smi` shows it).
+
+| GPU (compute capability) | Works | How |
+|---|---|---|
+| Tesla P100 (6.0) | **yes, tested** | 1 variant 68 s, 8 variants 375 s (11 images) |
+| Maxwell (5.x), P40/P4, GTX 10 (6.1), T4, RTX 20 (7.5), A100 (8.0) | expected | compiled code included |
+| V100 (7.0), A40, A10, RTX 30 (8.6), L40, RTX 40 (8.9), H100 (9.0) | expected | compiled by the driver on first use (a few extra minutes; see below) |
+| Blackwell: B200, RTX 50 (10.x, 12.x) | uncertain | newer than CUDA 11.3; test before relying on it |
+| Kepler: K80, K40 (3.x) | **no** | no code for it in this build |
+
+On GPUs that compile on first use, keep the compiled code between runs by adding `-e CUDA_CACHE_PATH=/data/.nv_cache`
+to `docker run` (otherwise `--rm` and `HOME=/tmp` discard it after every run).
+
 ## Optional: the original Caffe/CUDA pipeline for comparison
-If you have an existing CDeep3M2 Caffe image (for example `cdeep3m-2.1.5:U16C11.3`), add the overlay fix and run it
-on the same data:
+This needs an existing CDeep3M2 Caffe image on the machine (here `cdeep3m-2.1.5:U16C11.3`, built in 2021; it is
+not in a public registry). Its `Create_overlays.py` fails at the last step on 3-channel PNGs such as the test images
+(`Invalid number of channels in input image`), so first add the fix in `patches/cdeep3m2-create-overlays-fix.patch`.
+
+### Build (once)
 ```
-docker build --network host -f docker/Dockerfile.caffe -t cdeep3m-caffe:fixed --build-arg BASE=cdeep3m-2.1.5:U16C11.3 .
+docker build --network host -f docker/Dockerfile.caffe -t cdeep3m-caffe:fixed \
+    --build-arg BASE=cdeep3m-2.1.5:U16C11.3 .
+```
+This adds one small layer (the patched `Create_overlays.py`) on top of the base image and takes a few seconds.
+Check that the fix is in and the GPU is visible:
+```
+docker run --rm --entrypoint grep cdeep3m-caffe:fixed -c "palette/RGB" /home/cdeep3m/Create_overlays.py   # prints 1
+docker run --rm --gpus all --entrypoint nvidia-smi cdeep3m-caffe:fixed -L                                 # lists the GPU
+```
+
+### Predict
+```
 docker run --rm --gpus all --user "$(id -u):$(id -g)" -e HOME=/tmp --shm-size=2g -v "$PWD/downloads":/data \
     --entrypoint /home/cdeep3m/runprediction.sh cdeep3m-caffe:fixed \
     --models 1fm --denoise 0 --augspeed 1 /data/SBEM_Mitochondria /data/mito_testsample/testset /data/out_caffe
 ```
+* The base image's entrypoint is `top -b`, hence `--entrypoint`.
+* It uses the original `.caffemodel` (no conversion) and all visible GPUs; to use one, add `--gpu 0` before
+  `--models`.
+* Results as for ncnn: `downloads/out_caffe/ensembled/`, `overlay/`, `DONE`. On the P100 the segmentation is identical
+  to ncnn's (Dice 1.0000).
+
+### Use the image on another machine
+The image exists only where it was built. Copy it instead of rebuilding (the other machine does not need the base image):
+```
+docker save cdeep3m-caffe:fixed | gzip > cdeep3m-caffe-fixed.tar.gz      # on this machine (several GB)
+docker load < cdeep3m-caffe-fixed.tar.gz                                # on the other machine
+```
+or push it to a registry your group uses. For a cluster without Docker, convert it with Singularity/Apptainer
+(see [docker/README.md](../docker/README.md)) and run with `--nv`. Check the GPU against the table above first.
