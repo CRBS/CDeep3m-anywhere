@@ -3,6 +3,8 @@
 One image with everything this repository needs: the patched CDeep3M2 pipeline, ncnn (Python wheel plus the
 conversion tools), the PyTorch trainer and the comparison tools. It contains no model weights and no data.
 
+Step by step from build to prediction: [docs/DOCKER_INSTALL.md](../docs/DOCKER_INSTALL.md).
+
 The image is based on Ubuntu 24.04 and does not depend on the host's OS version, so the same image runs on
 Ubuntu 20.04, 22.04, 24.04 or any other Linux with Docker. Only a GPU depends on the host (its driver).
 

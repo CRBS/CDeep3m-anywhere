@@ -70,6 +70,10 @@ Full report: [bench/BENCHMARK.md](bench/BENCHMARK.md). Estimates for hardware we
 (other GPUs, phone, training) are in [docs/NOTES.md](docs/NOTES.md) and are labelled as estimates.
 
 ## Quick start
+**With Docker** (nothing to install but Docker): follow [docs/DOCKER_INSTALL.md](docs/DOCKER_INSTALL.md), which builds the
+image, downloads the model and sample images with `tools/modelDownload.sh`, converts the model and predicts.
+Without Docker:
+
 1. **Get CDeep3M2 and apply the patch**
    ```
    git clone https://github.com/CRBS/cdeep3m2.git && cd cdeep3m2 && git checkout 67d6308
