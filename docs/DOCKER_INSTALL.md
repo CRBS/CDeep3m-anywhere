@@ -209,14 +209,48 @@ done
 Read it with `cat downloads/train_staged/report.log`. Tip: start long interactive work inside `tmux` so the session
 itself survives a disconnect (`tmux new -s work`, later `tmux attach -t work`).
 
-### Speed (Tesla P100)
-About 0.2 s per update (about 0.26 s including the checkpoint saves), so the 5000 updates take about 22 minutes;
-the same recipe on the CPU (i9-11900K, 8 threads) took 3.3 s per update, about 4.6 hours.
+### Measured (Tesla P100, 2026-11-15)
+| Stage | Updates | Time |
+|---|---|---|
+| `--max-iter 1000` | 1 to 1000 | 282 s |
+| `--max-iter 3000` | 1001 to 3000 | 551 s |
+| `--max-iter 5000` | 3001 to 5000 | 550 s |
+| **all** | 5000 | **1383 s (23 min)** |
+
+About 0.2 s per update plus the checkpoint saves; the same recipe on the CPU (i9-11900K, 8 threads) took 3.3 s per
+update, about 4.6 hours. Average loss (last 16 updates) at the end: 0.114. No errors; the learning rate at the stage
+boundaries matched the earlier CPU run exactly.
 
 ### Use the trained model
-Export to a `.caffemodel` (this re-estimates the BatchNorm statistics; the original model only serves as a layout
-template), then convert and predict as in steps 5 and 6. See [TRAINING.md](TRAINING.md) for why the re-estimation
-matters.
+Export to a `.caffemodel` (this re-estimates the BatchNorm statistics on the training data; the original model only
+serves as a layout template, its weights are not used), convert, predict. The new model folder needs the same layout
+as a model-zoo model (`1fm/deploy.prototxt`, `1fm/trainedmodel/*.caffemodel`, `1fm/ncnn/`):
+```
+IMAGE=cdeep3m-anywhere:gpu docker/run.sh downloads bash -c '
+  set -e
+  M=/data/trained_staged/1fm; mkdir -p $M/trainedmodel; cp /data/SBEM_Mitochondria/1fm/deploy.prototxt $M/
+  cd /opt/cdeep3m-anywhere
+  python3 -m trainer.export_caffemodel --deploy $M/deploy.prototxt --checkpoint /data/train_staged/stage_5000.pt \
+      --template /data/SBEM_Mitochondria/1fm/trainedmodel/1fm_classifer_iter_80000.caffemodel \
+      --out $M/trainedmodel/1fm_classifer_iter_5000.caffemodel --data /data/train_data
+  convert_model.sh $M/deploy.prototxt $M/trainedmodel/1fm_classifer_iter_5000.caffemodel $M/ncnn'
+
+IMAGE=cdeep3m-anywhere:gpu docker/run.sh downloads runprediction.sh \
+    --models 1fm --denoise 0 --augspeed 1 --backend ncnn --device auto \
+    /data/trained_staged /data/mito_testsample/validation/images /data/out_val_trained_staged
+```
+Use `stage_1000.pt` or `stage_3000.pt` to export an earlier stage. Export took 146 s, the prediction of the 10
+validation images (8 variants, Vulkan) 107 s. To score against the labels and compare with the pretrained model
+(predicted the same way into `out_val_SBEM_Mitochondria`):
+```
+IMAGE=cdeep3m-anywhere:gpu GPU=off docker/run.sh downloads python3 /opt/cdeep3m-anywhere/tools/compare_predictions.py \
+    --a out_val_trained_staged/ensembled --b out_val_SBEM_Mitochondria/ensembled \
+    --labels mito_testsample/validation/labels --images mito_testsample/validation/images \
+    --out compare_val_trained --name-a Staged5000 --name-b Pretrained
+```
+Result on the 10 validation images: Dice **0.688** for this model (5000 updates from scratch on 20 images) and
+**0.840** for the pretrained model (80000 iterations on its own, larger training set). Report:
+`downloads/compare_val_trained/summary.txt`, pictures in `side_by_side/`.
 
 ## Troubleshooting
 | Problem | Fix |
