@@ -17,6 +17,11 @@ set -e
 [ $# -ge 1 ] || { sed -n '2,15p' "$0"; exit 1; }
 here=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$1"; D=$(readlink -f "$1"); run=${2:-}
+if [ ! -w "$D" ]; then
+  echo "cannot write to $D (owner: $(stat -c %U "$D")). Docker creates a missing mount folder as root." >&2
+  echo "Fix it with:  sudo chown -R $(id -un): $D   or use another folder." >&2
+  exit 1
+fi
 MODEL_URL=https://cildata.crbs.ucsd.edu/media/model_display/50681/SBEM_Mitochondria.tar
 SAMPLE_REPO=https://github.com/CRBS/cdeep3m2.git
 
