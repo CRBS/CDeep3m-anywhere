@@ -13,7 +13,7 @@
 #   image_test.sh                            the test itself (a copy of docker/image_test.sh)
 #
 # Downloads run on the host (curl or wget, git). The container needs no network.
-set -e
+set -e -o pipefail
 [ $# -ge 1 ] || { sed -n '2,15p' "$0"; exit 1; }
 here=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$1"; D=$(readlink -f "$1"); run=${2:-}
@@ -29,7 +29,13 @@ if [ -z "$IMAGE" ]; then
   if docker image inspect cdeep3m-anywhere:gpu >/dev/null 2>&1; then IMAGE=cdeep3m-anywhere:gpu; else IMAGE=cdeep3m-anywhere:cpu; fi
 fi
 docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "image $IMAGE not found; build it first (see docker/README.md)" >&2; exit 1; }
-gpu=(); docker info 2>/dev/null | grep -qi 'runtimes:.*nvidia' && gpu=(--gpus all)
+# GPU=auto|on|off as in docker/run.sh. "graphics" is needed for Vulkan (ncnn --device vulkan).
+GPU=${GPU:-auto}; gpu=()
+has_toolkit() { docker info 2>/dev/null | grep -qi 'runtimes:.*nvidia' || command -v nvidia-container-cli >/dev/null 2>&1; }
+if [ "$GPU" = on ] || { [ "$GPU" = auto ] && nvidia-smi -L >/dev/null 2>&1 && has_toolkit; }; then
+  gpu=(--gpus 'all,"capabilities=compute,utility,graphics"')
+fi
+echo "image $IMAGE, GPU: ${gpu[*]:-none (set GPU=on to force)}"
 in_image() { docker run --rm "${gpu[@]}" --user "$(id -u):$(id -g)" --shm-size=2g \
                  -e DEVICE="${DEVICE:-cpu}" -v "$D":/data -v "$D/mito_testsample":/sample:ro "$IMAGE" "$@"; }
 

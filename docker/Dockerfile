@@ -67,10 +67,13 @@ COPY --from=builder /opt/ncnn_build /opt/ncnn_build
 COPY --from=builder /opt/cdeep3m2 /opt/cdeep3m2
 COPY --from=builder /opt/caffe.proto /opt/caffe.proto
 COPY . /opt/cdeep3m-anywhere
+# CDeep3M2 calls some of its .py scripts by name (enhance_stack.py from PreprocessTrainingData.py), so they
+# must be executable and must run with the venv python (some start with #!/usr/bin/python3, which has no numpy).
 RUN cd /opt/cdeep3m2 \
     && patch -p1 < /opt/cdeep3m-anywhere/patches/cdeep3m2-67d6308-device-backend.patch \
     && cp /opt/cdeep3m-anywhere/ncnn/ncnn_predict.py . \
-    && chmod +x *.sh /opt/cdeep3m-anywhere/ncnn/*.sh /opt/cdeep3m-anywhere/tools/*.sh \
+    && sed -i '1s|^#!.*python.*$|#!/usr/bin/env python3|' $(find . -name '*.py') \
+    && chmod +x *.sh *.py /opt/cdeep3m-anywhere/ncnn/*.sh /opt/cdeep3m-anywhere/tools/*.sh \
     && chmod -R a+rX /opt
 
 ENV CDEEP3M2=/opt/cdeep3m2 \
