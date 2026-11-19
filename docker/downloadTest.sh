@@ -9,7 +9,7 @@
 # What it puts into <data folder> (about 3 GB; steps that are already done are skipped):
 #   models/SBEM_Mitochondria/{1fm,3fm,5fm}   pre-trained CDeep3M model (https://doi.org/10.7295/W9CDEEP3M50681)
 #   mito_testsample/                         sample images and labels from the CDeep3M2 repository
-#   train_data/                              augmented training data, made from the sample inside the image
+#   train_data/                              augmented training data (strength 0, no denoising: prox_tv is not in the image)
 #   image_test.sh                            the test itself (a copy of docker/image_test.sh)
 #
 # Downloads run on the host (curl or wget, git). The container needs no network.
@@ -63,7 +63,7 @@ ls "$D/mito_testsample"
 echo "== 3. training data (augmentation of the sample, a few minutes)"
 if ls "$D"/train_data/*.h5 >/dev/null 2>&1; then echo "already there"; else
   mkdir -p "$D/train_data"
-  in_image bash -c 'cd "$CDEEP3M2" && python PreprocessTrainingData.py /sample/training/images /sample/training/labels /data/train_data' | tail -n 6
+  in_image bash -c 'cd "$CDEEP3M2" && python PreprocessTrainingData.py /sample/training/images /sample/training/labels 0 /data/train_data' | tail -n 6
 fi
 du -sh "$D/train_data"
 
